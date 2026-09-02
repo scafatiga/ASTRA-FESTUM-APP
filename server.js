@@ -39,7 +39,8 @@ app.get('/api/puntos-venta', async (req, res) => {
   try {
     const { data, error } = await db
       .from('puntos_venta')
-      .select('*');
+      .select('*')
+      .order('id', { ascending: true });
 
     if (error) {
       console.error('Error Supabase PDVs:', error);
@@ -52,12 +53,13 @@ app.get('/api/puntos-venta', async (req, res) => {
   }
 });
 
-// 2. Obtener lista de Empleados
+// 2. Obtener lista de Empleados (Tolerante a la estructura de columnas)
 app.get('/api/empleados', async (req, res) => {
   try {
     const { data, error } = await db
       .from('empleados')
-      .select('*');
+      .select('*')
+      .order('id', { ascending: true });
 
     if (error) {
       console.error('Error Supabase Empleados:', error);
