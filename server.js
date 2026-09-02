@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { createClient } from '@supabase/supabase-js';
+import pkg from 'pg';
+const { Pool } = pkg;
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -9,27 +10,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('Error: Faltan las variables de entorno de Supabase.');
-  process.exit(1);
-}
-
-// Configuración del cliente Supabase con targeting explicito al esquema
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  db: { schema: 'astra_festum' },
-  global: {
-    headers: {
-      'Accept-Profile': 'astra_festum',
-      'Content-Profile': 'astra_festum'
-    }
-  },
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false
-  }
+// Conexión directa por PostgreSQL URI (DATABASE_URL de Supabase)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
 const parseId = (val) => {
@@ -43,13 +27,8 @@ const parseId = (val) => {
 
 app.get('/api/puntos-venta', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('puntos_venta')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) throw error;
-    res.json(data);
+    const { rows } = await pool.query('SELECT * FROM astra_festum.puntos_venta ORDER BY id ASC');
+    res.json(rows);
   } catch (err) {
     console.error('Error GET /api/puntos-venta:', err.message);
     res.status(500).json({ error: err.message });
@@ -58,13 +37,8 @@ app.get('/api/puntos-venta', async (req, res) => {
 
 app.get('/api/empleados', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('empleados')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) throw error;
-    res.json(data);
+    const { rows } = await pool.query('SELECT * FROM astra_festum.empleados ORDER BY id ASC');
+    res.json(rows);
   } catch (err) {
     console.error('Error GET /api/empleados:', err.message);
     res.status(500).json({ error: err.message });
@@ -73,13 +47,8 @@ app.get('/api/empleados', async (req, res) => {
 
 app.get('/api/cierres', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('cierres')
-      .select('*')
-      .order('fecha', { ascending: false });
-
-    if (error) throw error;
-    res.json(data);
+    const { rows } = await pool.query('SELECT * FROM astra_festum.cierres ORDER BY fecha DESC');
+    res.json(rows);
   } catch (err) {
     console.error('Error GET /api/cierres:', err.message);
     res.status(500).json({ error: err.message });
@@ -87,7 +56,10 @@ app.get('/api/cierres', async (req, res) => {
 });
 
 app.post('/api/cierre', async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     const {
       pdv_origen_id,
       fecha,
@@ -99,73 +71,65 @@ app.post('/api/cierre', async (req, res) => {
     } = req.body;
 
     if (!pdv_origen_id || total_efectivo === undefined || total_tarjeta === undefined) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Faltan datos obligatorios en el cierre' });
     }
 
     const pdvOrigenParsed = parseId(pdv_origen_id);
 
-    // 1. Insertar Registro Principal en 'cierres'
-    const { data: cierreData, error: cierreError } = await supabase
-      .from('cierres')
-      .insert([
-        {
-          pdv_id: pdvOrigenParsed,
-          fecha: fecha || new Date().toISOString(),
-          total_efectivo: parseFloat(total_efectivo) || 0,
-          total_tarjeta: parseFloat(total_tarjeta) || 0,
-          observaciones: observaciones || ''
-        }
-      ])
-      .select('id')
-      .single();
+    // 1. Insertar Cierre
+    const queryCierre = `
+      INSERT INTO astra_festum.cierres (pdv_id, fecha, total_efectivo, total_tarjeta, observaciones)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id;
+    `;
+    const valuesCierre = [
+      pdvOrigenParsed,
+      fecha || new Date().toISOString(),
+      parseFloat(total_efectivo) || 0,
+      parseFloat(total_tarjeta) || 0,
+      observaciones || ''
+    ];
 
-    if (cierreError) {
-      console.error('Error al insertar cierre en Supabase:', cierreError);
-      return res.status(500).json({ error: `Cierres: ${cierreError.message}` });
-    }
+    const resCierre = await client.query(queryCierre, valuesCierre);
+    const cierreId = resCierre.rows[0].id;
 
-    const cierreId = cierreData.id;
-
-    // 2. Insertar Gastos opcionales
+    // 2. Insertar Gastos
     if (gastos && Array.isArray(gastos) && gastos.length > 0) {
-      const gastosFormateados = gastos.map(g => ({
-        cierre_id: cierreId,
-        pdv_origen_id: pdvOrigenParsed,
-        pdv_destino_id: parseId(g.pdv_destino_id) || pdvOrigenParsed,
-        monto: parseFloat(g.monto) || 0,
-        concepto: g.concepto || 'Gasto vario'
-      }));
-
-      const { error: gastosError } = await supabase
-        .from('gastos')
-        .insert(gastosFormateados);
-
-      if (gastosError) {
-        console.error('Error al insertar gastos en Supabase:', gastosError);
-        return res.status(500).json({ error: `Gastos: ${gastosError.message}` });
+      for (const g of gastos) {
+        const queryGasto = `
+          INSERT INTO astra_festum.gastos (cierre_id, pdv_origen_id, pdv_destino_id, monto, concepto)
+          VALUES ($1, $2, $3, $4, $5);
+        `;
+        await client.query(queryGasto, [
+          cierreId,
+          pdvOrigenParsed,
+          parseId(g.pdv_destino_id) || pdvOrigenParsed,
+          parseFloat(g.monto) || 0,
+          g.concepto || 'Gasto vario'
+        ]);
       }
     }
 
-    // 3. Insertar Adelantos opcionales
+    // 3. Insertar Adelantos
     if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
-      const adelantosFormateados = adelantos.map(a => ({
-        cierre_id: cierreId,
-        pdv_origen_id: pdvOrigenParsed,
-        pdv_destino_id: parseId(a.pdv_destino_id) || pdvOrigenParsed,
-        empleado_id: parseId(a.empleado_id),
-        monto: parseFloat(a.monto) || 0,
-        observaciones: a.observaciones || ''
-      }));
-
-      const { error: adelantosError } = await supabase
-        .from('adelantos')
-        .insert(adelantosFormateados);
-
-      if (adelantosError) {
-        console.error('Error al insertar adelantos en Supabase:', adelantosError);
-        return res.status(500).json({ error: `Adelantos: ${adelantosError.message}` });
+      for (const a of adelantos) {
+        const queryAdelanto = `
+          INSERT INTO astra_festum.adelantos (cierre_id, pdv_origen_id, pdv_destino_id, empleado_id, monto, observaciones)
+          VALUES ($1, $2, $3, $4, $5, $6);
+        `;
+        await client.query(queryAdelanto, [
+          cierreId,
+          pdvOrigenParsed,
+          parseId(a.pdv_destino_id) || pdvOrigenParsed,
+          parseId(a.empleado_id),
+          parseFloat(a.monto) || 0,
+          a.observaciones || ''
+        ]);
       }
     }
+
+    await client.query('COMMIT');
 
     return res.status(201).json({
       success: true,
@@ -174,22 +138,14 @@ app.post('/api/cierre', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error no controlado en POST /api/cierre:', err);
-    return res.status(500).json({ error: err.message || 'Error interno en el servidor' });
+    await client.query('ROLLBACK');
+    console.error('Error en POST /api/cierre:', err.message);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-// ==========================================
-// ARRANQUE DEL SERVIDOR
-// ==========================================
-const server = app.listen(port, () => {
+app.listen(port, () => {
   console.log(`Servidor Astra Festum activo en el puerto ${port}`);
-});
-
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Error: El puerto ${port} ya está ocupado.`);
-  } else {
-    console.error('Error de servidor:', err);
-  }
 });
