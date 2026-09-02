@@ -5,12 +5,12 @@ import { createClient } from '@supabase/supabase-js';
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Configuración de Middlewares
+// Middlewares
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Servir archivos estáticos como cierre.html
+app.use(express.static('public'));
 
-// Inicialización de Supabase con Service Role Key
+// Supabase Setup
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -19,7 +19,6 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// Cliente único de Supabase con opciones auth ajustadas para evitar desfases de reloj
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
     persistSession: false,
@@ -27,14 +26,19 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 });
 
-// Helper para interactuar exclusivamente con el esquema astra_festum
 const db = supabase.schema('astra_festum');
+
+// Helper para parsear IDs (Integer o conservar String si es UUID)
+const parseId = (val) => {
+  if (val === null || val === undefined || val === '') return null;
+  return isNaN(val) ? val : parseInt(val, 10);
+};
 
 // ==========================================
 // ENDPOINTS API
 // ==========================================
 
-// 1. Obtener lista de Puntos de Venta (PDVs)
+// 1. Obtener Puntos de Venta
 app.get('/api/puntos-venta', async (req, res) => {
   try {
     const { data, error } = await db
@@ -42,10 +46,7 @@ app.get('/api/puntos-venta', async (req, res) => {
       .select('*')
       .order('id', { ascending: true });
 
-    if (error) {
-      console.error('Error Supabase PDVs:', error);
-      throw error;
-    }
+    if (error) throw error;
     res.json(data);
   } catch (err) {
     console.error('Error en GET /api/puntos-venta:', err.message);
@@ -53,7 +54,7 @@ app.get('/api/puntos-venta', async (req, res) => {
   }
 });
 
-// 2. Obtener lista de Empleados (Tolerante a la estructura de columnas)
+// 2. Obtener Empleados
 app.get('/api/empleados', async (req, res) => {
   try {
     const { data, error } = await db
@@ -61,10 +62,7 @@ app.get('/api/empleados', async (req, res) => {
       .select('*')
       .order('id', { ascending: true });
 
-    if (error) {
-      console.error('Error Supabase Empleados:', error);
-      throw error;
-    }
+    if (error) throw error;
     res.json(data);
   } catch (err) {
     console.error('Error en GET /api/empleados:', err.message);
@@ -72,7 +70,7 @@ app.get('/api/empleados', async (req, res) => {
   }
 });
 
-// 3. Obtener histórico de Cierres de Caja
+// 3. Obtener Histórico de Cierres
 app.get('/api/cierres', async (req, res) => {
   try {
     const { data, error } = await db
@@ -80,18 +78,15 @@ app.get('/api/cierres', async (req, res) => {
       .select('*')
       .order('fecha', { ascending: false });
 
-    if (error) {
-      console.error('Error Supabase Cierres:', error);
-      throw error;
-    }
+    if (error) throw error;
     res.json(data);
   } catch (err) {
     console.error('Error en GET /api/cierres:', err.message);
-    res.status(500).json({ error: err.message || 'Error al obtener el histórico de cierres' });
+    res.status(500).json({ error: err.message || 'Error al obtener el histórico' });
   }
 });
 
-// 4. Procesar Cierre de Caja con Gastos y Adelantos Cruzados
+// 4. Registrar Cierre de Caja
 app.post('/api/cierre', async (req, res) => {
   try {
     const {
@@ -104,55 +99,62 @@ app.post('/api/cierre', async (req, res) => {
       adelantos
     } = req.body;
 
-    // Validación básica de campos requeridos
     if (!pdv_origen_id || total_efectivo === undefined || total_tarjeta === undefined) {
       return res.status(400).json({ error: 'Faltan datos obligatorios en el cierre' });
     }
 
-    // A. Insertar cabecera del Cierre
+    const pdvOrigenParsed = parseId(pdv_origen_id);
+
+    // A. Insertar Cierre
     const { data: cierreData, error: cierreError } = await db
       .from('cierres')
       .insert([
         {
-          pdv_id: pdv_origen_id,
+          pdv_id: pdvOrigenParsed,
           fecha: fecha || new Date().toISOString(),
-          total_efectivo,
-          total_tarjeta,
-          observaciones
+          total_efectivo: parseFloat(total_efectivo) || 0,
+          total_tarjeta: parseFloat(total_tarjeta) || 0,
+          observaciones: observaciones || ''
         }
       ])
       .select('id')
       .single();
 
-    if (cierreError) throw cierreError;
+    if (cierreError) {
+      console.error('Error insertando cierre:', cierreError);
+      return res.status(500).json({ error: `Error en Cierres: ${cierreError.message} (${cierreError.details || cierreError.hint || ''})` });
+    }
 
     const cierreId = cierreData.id;
 
-    // B. Insertar Gastos (asociando caja origen y PDV destino imputado)
+    // B. Insertar Gastos
     if (gastos && Array.isArray(gastos) && gastos.length > 0) {
       const gastosFormateados = gastos.map(g => ({
         cierre_id: cierreId,
-        pdv_origen_id: pdv_origen_id,
-        pdv_destino_id: g.pdv_destino_id || pdv_origen_id,
-        monto: g.monto,
-        concepto: g.concepto
+        pdv_origen_id: pdvOrigenParsed,
+        pdv_destino_id: parseId(g.pdv_destino_id) || pdvOrigenParsed,
+        monto: parseFloat(g.monto) || 0,
+        concepto: g.concepto || 'Gasto vario'
       }));
 
       const { error: gastosError } = await db
         .from('gastos')
         .insert(gastosFormateados);
 
-      if (gastosError) throw gastosError;
+      if (gastosError) {
+        console.error('Error insertando gastos:', gastosError);
+        return res.status(500).json({ error: `Error en Gastos: ${gastosError.message} (${gastosError.details || gastosError.hint || ''})` });
+      }
     }
 
-    // C. Insertar Adelantos/Abonos de Empleados (caja origen y PDV/empleado imputado)
+    // C. Insertar Adelantos
     if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
       const adelantosFormateados = adelantos.map(a => ({
         cierre_id: cierreId,
-        pdv_origen_id: pdv_origen_id,
-        pdv_destino_id: a.pdv_destino_id || pdv_origen_id,
-        empleado_id: a.empleado_id,
-        monto: a.monto,
+        pdv_origen_id: pdvOrigenParsed,
+        pdv_destino_id: parseId(a.pdv_destino_id) || pdvOrigenParsed,
+        empleado_id: parseId(a.empleado_id),
+        monto: parseFloat(a.monto) || 0,
         observaciones: a.observaciones || ''
       }));
 
@@ -160,10 +162,12 @@ app.post('/api/cierre', async (req, res) => {
         .from('adelantos')
         .insert(adelantosFormateados);
 
-      if (adelantosError) throw adelantosError;
+      if (adelantosError) {
+        console.error('Error insertando adelantos:', adelantosError);
+        return res.status(500).json({ error: `Error en Adelantos: ${adelantosError.message} (${adelantosError.details || adelantosError.hint || ''})` });
+      }
     }
 
-    // Respuesta exitosa
     res.status(201).json({
       success: true,
       message: 'Cierre registrado correctamente',
@@ -171,12 +175,11 @@ app.post('/api/cierre', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error en POST /api/cierre:', err.message);
-    res.status(500).json({ error: 'Error interno al registrar el cierre de caja' });
+    console.error('Error no controlado en POST /api/cierre:', err);
+    res.status(500).json({ error: err.message || 'Error interno en el servidor' });
   }
 });
 
-// Inicialización del servidor
 app.listen(port, () => {
   console.log(`Servidor Astra Festum activo en puerto ${port}`);
 });
