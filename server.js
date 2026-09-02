@@ -1,6 +1,8 @@
-const express = require('express');
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
@@ -61,6 +63,6 @@ app.get('/api/cierres', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, function() {
+app.listen(PORT, () => {
   console.log('Servidor Astra Festum activo en puerto ' + PORT);
 });
