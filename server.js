@@ -8,13 +8,10 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// Configurar el esquema predeterminado 'astra_festum' en la instancia del cliente
+// Cliente básico sin la opción db.schema global
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    db: { schema: 'astra_festum' }
-  }
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // Registrar Cierre
@@ -23,6 +20,7 @@ app.post('/api/cierre-caja', async (req, res) => {
     const { fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones, adelantos, gastos } = req.body;
 
     const { data: venta, error: ventaErr } = await supabase
+      .schema('astra_festum')
       .from('ventas_diarias')
       .insert([{ fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones }])
       .select()
@@ -33,6 +31,7 @@ app.post('/api/cierre-caja', async (req, res) => {
     if (adelantos && adelantos.length > 0) {
       const adelantosFormatted = adelantos.map(a => ({ ...a, venta_id: venta.id }));
       const { error: adErr } = await supabase
+        .schema('astra_festum')
         .from('adelantos_empleados')
         .insert(adelantosFormatted);
       if (adErr) throw adErr;
@@ -41,6 +40,7 @@ app.post('/api/cierre-caja', async (req, res) => {
     if (gastos && gastos.length > 0) {
       const gastosFormatted = gastos.map(g => ({ ...g, venta_id: venta.id }));
       const { error: gErr } = await supabase
+        .schema('astra_festum')
         .from('gastos_caja')
         .insert(gastosFormatted);
       if (gErr) throw gErr;
@@ -57,6 +57,7 @@ app.post('/api/cierre-caja', async (req, res) => {
 app.get('/api/cierres', async (req, res) => {
   try {
     const { data: ventas, error: vErr } = await supabase
+      .schema('astra_festum')
       .from('ventas_diarias')
       .select('*')
       .order('fecha', { ascending: false });
@@ -64,12 +65,14 @@ app.get('/api/cierres', async (req, res) => {
     if (vErr) throw vErr;
 
     const { data: adelantos, error: aErr } = await supabase
+      .schema('astra_festum')
       .from('adelantos_empleados')
       .select('*');
 
     if (aErr) throw aErr;
 
     const { data: gastos, error: gErr } = await supabase
+      .schema('astra_festum')
       .from('gastos_caja')
       .select('*');
 
