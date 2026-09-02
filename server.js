@@ -44,11 +44,11 @@ app.get('/api/puntos-venta/todos', async (req, res) => {
 });
 
 app.post('/api/puntos-venta', async (req, res) => {
-  const { nombre } = req.body;
+  const { nombre, direccion, tipo_stand } = req.body;
   try {
     const { rows } = await pool.query(
-      'INSERT INTO puntos_venta (nombre, activo) VALUES ($1, TRUE) RETURNING *',
-      [nombre]
+      'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, activo) VALUES ($1, $2, $3, TRUE) RETURNING *',
+      [nombre, direccion || null, tipo_stand || null]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -126,7 +126,7 @@ app.post('/api/cierres', async (req, res) => {
   }
 });
 
-// --- USUARIOS / EMPLEADOS ---
+// --- USUARIOS / EMPLEADOS (cuentas de acceso, tabla "usuarios") ---
 
 app.get('/api/usuarios', async (req, res) => {
   try {
@@ -144,6 +144,172 @@ app.get('/api/empleados', async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/empleados:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- PERSONAL (ficha completa de empleado, tabla "empleados") ---
+
+app.get('/api/personal', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM empleados ORDER BY nombre ASC');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/personal:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/personal', async (req, res) => {
+  const {
+    usuario_id,
+    nombre,
+    dni,
+    numero_seguridad_social,
+    nacionalidad,
+    fecha_nacimiento,
+    iban,
+    domicilio,
+    fecha_in,
+    fecha_out,
+    horas_alta,
+    punto_venta_id,
+    direccion,
+    email,
+    foto_dni,
+    estado
+  } = req.body;
+
+  if (!nombre) {
+    return res.status(400).json({ error: 'Falta el nombre del empleado' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO empleados
+        (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
+         iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id, direccion,
+         email, foto_dni, estado)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, TRUE))
+       RETURNING *`,
+      [
+        usuario_id || null,
+        nombre,
+        dni || null,
+        numero_seguridad_social || null,
+        nacionalidad || null,
+        fecha_nacimiento || null,
+        iban || null,
+        domicilio || null,
+        fecha_in || null,
+        fecha_out || null,
+        horas_alta || null,
+        punto_venta_id || null,
+        direccion || null,
+        email || null,
+        foto_dni || null,
+        estado
+      ]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/personal:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/personal/:id/estado', async (req, res) => {
+  const { id } = req.params;
+  const { estado } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'UPDATE empleados SET estado = $1 WHERE id = $2 RETURNING *',
+      [estado, id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PATCH /api/personal/:id/estado:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- PROVEEDORES ---
+
+app.get('/api/proveedores', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM proveedores WHERE activo = TRUE ORDER BY nombre_proveedor ASC');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/proveedores:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/proveedores/todos', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM proveedores ORDER BY nombre_proveedor ASC');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/proveedores/todos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/proveedores', async (req, res) => {
+  const {
+    nombre_proveedor,
+    nombre_comercial,
+    cif,
+    iban,
+    forma_pago,
+    ciudad,
+    direccion_fiscal,
+    telefono,
+    email
+  } = req.body;
+
+  if (!nombre_proveedor) {
+    return res.status(400).json({ error: 'Falta el nombre del proveedor' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO proveedores
+        (nombre_proveedor, nombre_comercial, cif, iban, forma_pago, ciudad, direccion_fiscal, telefono, email)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        nombre_proveedor,
+        nombre_comercial || null,
+        cif || null,
+        iban || null,
+        forma_pago || null,
+        ciudad || null,
+        direccion_fiscal || null,
+        telefono || null,
+        email || null
+      ]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/proveedores:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/proveedores/:id/estado', async (req, res) => {
+  const { id } = req.params;
+  const { activo } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'UPDATE proveedores SET activo = $1 WHERE id = $2 RETURNING *',
+      [activo, id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PATCH /api/proveedores/:id/estado:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
