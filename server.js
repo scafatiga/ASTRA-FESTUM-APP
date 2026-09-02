@@ -82,6 +82,15 @@ app.get('/api/cierres', async (req, res) => {
   }
 });
 
+app.get('/api/usuarios', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/cierres', async (req, res) => {
   const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
   try {
