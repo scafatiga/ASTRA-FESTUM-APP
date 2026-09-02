@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         tbody.innerHTML = cierres.map(c => {
+            // Fecha
             const rawFecha = c.fecha || c.created_at || c.createdAt || c.timestamp;
             let fechaFormateada = 'Fecha no disponible';
             if (rawFecha) {
@@ -25,35 +26,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            const puntoVenta = c.punto_venta || c.puntoVenta || 'No especificado';
+            // Punto de Venta (buscando todas las variantes posibles)
+            const puntoVenta = c.punto_venta || c.puntoVenta || c.puntoventa || c.pv || 'No especificado';
 
-            const efectivo = Number(c.total_efectivo ?? c.efectivo ?? 0);
-            const tarjeta = Number(c.total_tarjeta ?? c.tarjeta ?? 0);
-            const total = efectivo + tarjeta;
+            // Totales
+            const efectivo = Number(c.total_efectivo ?? c.efectivo ?? c.totalEfectivo ?? 0);
+            const tarjeta = Number(c.total_tarjeta ?? c.tarjeta ?? c.totalTarjeta ?? 0);
+            const totalBruto = efectivo + tarjeta;
 
-            // Calcular total de gastos y adelantos de este cierre
-            const gastos = c.gastos || [];
-            const totalGastos = gastos.reduce((sum, g) => sum + Number(g.importe || g.monto || 0), 0);
+            // Gastos (buscando array en cualquier propiedad posible)
+            const gastos = c.gastos || c.gastosList || c.listaGastos || [];
+            const totalGastos = gastos.reduce((sum, g) => sum + Number(g.importe || g.monto || g.valor || 0), 0);
 
-            const adelantos = c.adelantos || [];
-            const totalAdelantos = adelantos.reduce((sum, a) => sum + Number(a.importe || a.monto || 0), 0);
+            // Adelantos (buscando array en cualquier propiedad posible)
+            const adelantos = c.adelantos || c.adelantosList || c.listaAdelantos || [];
+            const totalAdelantos = adelantos.reduce((sum, a) => sum + Number(a.importe || a.monto || a.valor || 0), 0);
 
-            // Cash Neto = Efectivo - Gastos - Adelantos
+            // Cash Neto
             const cashNeto = efectivo - totalGastos - totalAdelantos;
 
-            // Renderizar lista detallada desplegable/textual
+            // Construir detalles visuales
             let detallesHtml = '<div class="space-y-1 text-xs">';
             if (gastos.length > 0) {
                 detallesHtml += '<div class="font-semibold text-red-600">Gastos:</div>';
                 gastos.forEach(g => {
-                    detallesHtml += `<div>- ${g.descripcion || g.concepto}: ${Number(g.importe || g.monto || 0).toFixed(2)}€ (${g.punto_venta || g.puntoVenta || ''})</div>`;
+                    const desc = g.descripcion || g.concepto || g.desc || 'Gasto';
+                    const imp = Number(g.importe || g.monto || g.valor || 0).toFixed(2);
+                    const pvGasto = g.punto_venta || g.puntoVenta || '';
+                    detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '('+pvGasto+')' : ''}</div>`;
                 });
             }
 
             if (adelantos.length > 0) {
                 detallesHtml += '<div class="font-semibold text-blue-600 mt-1">Adelantos:</div>';
                 adelantos.forEach(a => {
-                    detallesHtml += `<div>- ${a.empleado || a.nombre}: ${Number(a.importe || a.monto || 0).toFixed(2)}€ (${a.punto_venta || a.puntoVenta || ''})</div>`;
+                    const emp = a.empleado || a.nombre || 'Empleado';
+                    const imp = Number(a.importe || a.monto || a.valor || 0).toFixed(2);
+                    const pvAd = a.punto_venta || a.puntoVenta || '';
+                    detallesHtml += `<div>- ${emp}: ${imp}€ ${pvAd ? '('+pvAd+')' : ''}</div>`;
                 });
             }
 
@@ -68,10 +78,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 font-medium text-gray-800">${puntoVenta}</td>
                     <td class="p-3 text-gray-600">${efectivo.toFixed(2)} €</td>
                     <td class="p-3 text-gray-600">${tarjeta.toFixed(2)} €</td>
-                    <td class="p-3 text-red-600 font-medium">-${totalGastos.toFixed(2)} €</td>
-                    <td class="p-3 text-blue-600 font-medium">-${totalAdelantos.toFixed(2)} €</td>
+                    <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
+                    <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
                     <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
-                    <td class="p-3 font-semibold text-gray-900">${total.toFixed(2)} €</td>
+                    <td class="p-3 font-semibold text-gray-900">${totalBruto.toFixed(2)} €</td>
                     <td class="p-3">${detallesHtml}</td>
                 </tr>
             `;
