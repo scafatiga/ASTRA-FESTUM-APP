@@ -32,20 +32,20 @@ const parseId = (val) => {
 
 app.get('/api/puntos-venta', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM puntos_venta ORDER BY id ASC');
+    const { rows } = await pool.query('SELECT * FROM astra_festum.puntos_venta ORDER BY id ASC');
     res.json(rows);
   } catch (err) {
-    console.error('Error GET /api/puntos-venta:', err.message);
+    console.error('DETALLE ERROR PUNTOS VENTA:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.get('/api/empleados', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM empleados ORDER BY id ASC');
+    const { rows } = await pool.query('SELECT * FROM astra_festum.empleados ORDER BY id ASC');
     res.json(rows);
   } catch (err) {
-    console.error('Error GET /api/empleados:', err.message);
+    console.error('DETALLE ERROR EMPLEADOS:', err);
     res.status(500).json({ error: err.message });
   }
 });
