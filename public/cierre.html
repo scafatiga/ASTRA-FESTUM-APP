@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -9,14 +9,13 @@
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
   <div class="bg-white p-8 rounded-lg shadow-md max-w-xl w-full">
     
-    <!-- Barra de Navegacion Superior -->
     <div class="flex justify-between items-center mb-6 pb-4 border-b">
       <a href="/" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm font-medium transition">
-        ? Menú Principal
+        &larr; Men&uacute; Principal
       </a>
       <h1 class="text-xl font-bold text-gray-800">Cierre de Caja</h1>
       <a href="/historico.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-sm font-medium transition">
-        Ver Histórico
+        Ver Hist&oacute;rico
       </a>
     </div>
 
@@ -43,23 +42,21 @@
 
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (€)</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (&euro;)</label>
           <input type="number" step="0.01" id="total_efectivo" required placeholder="0.00" class="w-full border rounded p-2 text-sm">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (€)</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (&euro;)</label>
           <input type="number" step="0.01" id="total_tarjeta" required placeholder="0.00" class="w-full border rounded p-2 text-sm">
         </div>
       </div>
 
-      <!-- Section: Adelantos -->
       <div class="border p-4 rounded bg-gray-50">
         <label class="block text-sm font-semibold text-gray-700 mb-2">Adelantos a Empleados</label>
         <div id="adelantosContainer" class="space-y-2 mb-2"></div>
         <button type="button" onclick="addAdelanto()" class="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium">+ Agregar Adelanto</button>
       </div>
 
-      <!-- Section: Gastos -->
       <div class="border p-4 rounded bg-gray-50">
         <label class="block text-sm font-semibold text-gray-700 mb-2">Gastos de Caja</label>
         <div id="gastosContainer" class="space-y-2 mb-2"></div>
@@ -82,11 +79,7 @@
       const container = document.getElementById('adelantosContainer');
       const div = document.createElement('div');
       div.className = 'flex gap-2 items-center';
-      div.innerHTML = 
-        <input type="text" placeholder="Nombre empleado" class="empleado-nombre border rounded p-1.5 text-xs flex-1" required>
-        <input type="number" step="0.01" placeholder="Importe (€)" class="empleado-importe border rounded p-1.5 text-xs w-28" required>
-        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">?</button>
-      ;
+      div.innerHTML = '<input type="text" placeholder="Nombre empleado" class="empleado-nombre border rounded p-1.5 text-xs flex-1" required><input type="number" step="0.01" placeholder="Importe (â‚¬)" class="empleado-importe border rounded p-1.5 text-xs w-28" required><button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">âœ•</button>';
       container.appendChild(div);
     }
 
@@ -94,11 +87,7 @@
       const container = document.getElementById('gastosContainer');
       const div = document.createElement('div');
       div.className = 'flex gap-2 items-center';
-      div.innerHTML = 
-        <input type="text" placeholder="Concepto del gasto" class="gasto-concepto border rounded p-1.5 text-xs flex-1" required>
-        <input type="number" step="0.01" placeholder="Importe (€)" class="gasto-importe border rounded p-1.5 text-xs w-28" required>
-        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">?</button>
-      ;
+      div.innerHTML = '<input type="text" placeholder="Concepto del gasto" class="gasto-concepto border rounded p-1.5 text-xs flex-1" required><input type="number" step="0.01" placeholder="Importe (â‚¬)" class="gasto-importe border rounded p-1.5 text-xs w-28" required><button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">âœ•</button>';
       container.appendChild(div);
     }
 
@@ -115,7 +104,7 @@
         monto: parseFloat(div.querySelector('.gasto-importe').value)
       }));
 
-       = {
+      const payload = {
         fecha: document.getElementById('fecha').value,
         punto_venta: document.getElementById('punto_venta').value,
         usuario_email: document.getElementById('usuario_email').value,
@@ -130,17 +119,17 @@
         const res = await fetch('/api/cierre-caja', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify()
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (data.success) {
-          alert('Cierre de caja guardado con éxito.');
+          alert('Cierre de caja guardado con Ã©xito.');
           window.location.href = '/historico.html';
         } else {
           alert('Error al guardar: ' + data.error);
         }
       } catch (err) {
-        alert('Error de conexión con el servidor.');
+        alert('Error de conexiÃ³n con el servidor.');
       }
     });
   </script>
