@@ -5,12 +5,10 @@ import { createClient } from '@supabase/supabase-js';
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Supabase Setup
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -19,20 +17,158 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// Configurar el esquema directamente en las opciones del cliente
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  db: { schema: 'astra_festum' },
   auth: {
     persistSession: false,
     autoRefreshToken: false
   }
 });
 
-const db = supabase.schema('astra_festum');
-
-// Helper para parsear IDs (Integer o conservar String si es UUID)
 const parseId = (val) => {
   if (val === null || val === undefined || val === '') return null;
   return isNaN(val) ? val : parseInt(val, 10);
 };
+
+// 1. Puntos de Venta
+app.get('/api/puntos-venta', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('puntos_venta')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Empleados
+app.get('/api/empleados', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('empleados')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Cierres
+app.get('/api/cierres', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('cierres')
+      .select('*')
+      .order('fecha', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Registrar Cierre
+app.post('/api/cierre', async (req, res) => {
+  try {
+    const {
+      pdv_origen_id,
+      fecha,
+      total_efectivo,
+      total_tarjeta,
+      observaciones,
+      gastos,
+      adelantos
+    } = req.body;
+
+    if (!pdv_origen_id || total_efectivo === undefined || total_tarjeta === undefined) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios en el cierre' });
+    }
+
+    const pdvOrigenParsed = parseId(pdv_origen_id);
+
+    // A. Insertar Cierre
+    const { data: cierreData, error: cierreError } = await supabase
+      .from('cierres')
+      .insert([
+        {
+          pdv_id: pdvOrigenParsed,
+          fecha: fecha || new Date().toISOString(),
+          total_efectivo: parseFloat(total_efectivo) || 0,
+          total_tarjeta: parseFloat(total_tarjeta) || 0,
+          observaciones: observaciones || ''
+        }
+      ])
+      .select('id')
+      .single();
+
+    if (cierreError) {
+      return res.status(500).json({ error: `Error en Cierres: ${cierreError.message}` });
+    }
+
+    const cierreId = cierreData.id;
+
+    // B. Insertar Gastos
+    if (gastos && Array.isArray(gastos) && gastos.length > 0) {
+      const gastosFormateados = gastos.map(g => ({
+        cierre_id: cierreId,
+        pdv_origen_id: pdvOrigenParsed,
+        pdv_destino_id: parseId(g.pdv_destino_id) || pdvOrigenParsed,
+        monto: parseFloat(g.monto) || 0,
+        concepto: g.concepto || 'Gasto vario'
+      }));
+
+      const { error: gastosError } = await supabase
+        .from('gastos')
+        .insert(gastosFormateados);
+
+      if (gastosError) {
+        return res.status(500).json({ error: `Error en Gastos: ${gastosError.message}` });
+      }
+    }
+
+    // C. Insertar Adelantos
+    if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
+      const adelantosFormateados = adelantos.map(a => ({
+        cierre_id: cierreId,
+        pdv_origen_id: pdvOrigenParsed,
+        pdv_destino_id: parseId(a.pdv_destino_id) || pdvOrigenParsed,
+        empleado_id: parseId(a.empleado_id),
+        monto: parseFloat(a.monto) || 0,
+        observaciones: a.observaciones || ''
+      }));
+
+      const { error: adelantosError } = await supabase
+        .from('adelantos')
+        .insert(adelantosFormateados);
+
+      if (adelantosError) {
+        return res.status(500).json({ error: `Error en Adelantos: ${adelantosError.message}` });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Cierre registrado correctamente',
+      cierre_id: cierreId
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Error interno en el servidor' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Servidor activo en puerto ${port}`);
+});
 
 // ==========================================
 // ENDPOINTS API
