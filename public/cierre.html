@@ -48,22 +48,22 @@
         </div>
       </div>
 
-      <!-- Adelantos -->
-      <div class="border-t border-gray-200 pt-4">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="text-sm font-bold text-gray-700">Adelantos a Empleados</h2>
-          <button type="button" onclick="agregarFilaAdelanto()" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-lg">+ Añadir Adelanto</button>
-        </div>
-        <div id="contenedor_adelantos" class="space-y-2"></div>
-      </div>
-
-      <!-- Gastos -->
+      <!-- 1. GASTOS (Primero) -->
       <div class="border-t border-gray-200 pt-4">
         <div class="flex justify-between items-center mb-3">
           <h2 class="text-sm font-bold text-gray-700">Gastos Pagados con Caja</h2>
           <button type="button" onclick="agregarFilaGasto()" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-semibold px-3 py-1.5 rounded-lg">+ Añadir Gasto</button>
         </div>
         <div id="contenedor_gastos" class="space-y-2"></div>
+      </div>
+
+      <!-- 2. ADELANTOS (Segundo) -->
+      <div class="border-t border-gray-200 pt-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-sm font-bold text-gray-700">Adelantos a Empleados</h2>
+          <button type="button" onclick="agregarFilaAdelanto()" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-lg">+ Añadir Adelanto</button>
+        </div>
+        <div id="contenedor_adelantos" class="space-y-2"></div>
       </div>
 
       <!-- Observaciones -->
@@ -73,7 +73,7 @@
       </div>
 
       <!-- Botón Guardar -->
-      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow transition duration-200">Guardar Cierre de Caja</button>
+      <button type="submit" id="btnGuardar" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow transition duration-200">Guardar Cierre de Caja</button>
     </form>
   </div>
 
@@ -123,6 +123,29 @@
       });
     }
 
+    function agregarFilaGasto() {
+      const cont = document.getElementById('contenedor_gastos');
+      const id = Date.now();
+
+      let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
+      listaPDVs.forEach(p => {
+        const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
+        pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
+      });
+
+      const html = `
+        <div id="gasto_${id}" class="grid grid-cols-1 md:grid-cols-3 gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
+          <input type="text" placeholder="Concepto del gasto" class="concepto bg-white border border-gray-300 text-xs rounded p-2" required>
+          <select class="pdv_dest_id bg-white border border-gray-300 text-xs rounded p-2">${pdvOptions}</select>
+          <div class="flex gap-2">
+            <input type="number" step="0.01" placeholder="Monto (€)" class="monto bg-white border border-gray-300 text-xs rounded p-2 w-full" required>
+            <button type="button" onclick="document.getElementById('gasto_${id}').remove()" class="text-red-500 hover:text-red-700 font-bold px-2">✕</button>
+          </div>
+        </div>
+      `;
+      cont.insertAdjacentHTML('beforeend', html);
+    }
+
     function agregarFilaAdelanto() {
       const cont = document.getElementById('contenedor_adelantos');
       const id = Date.now();
@@ -152,31 +175,12 @@
       cont.insertAdjacentHTML('beforeend', html);
     }
 
-    function agregarFilaGasto() {
-      const cont = document.getElementById('contenedor_gastos');
-      const id = Date.now();
-
-      let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
-      listaPDVs.forEach(p => {
-        const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
-        pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
-      });
-
-      const html = `
-        <div id="gasto_${id}" class="grid grid-cols-1 md:grid-cols-3 gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
-          <input type="text" placeholder="Concepto del gasto" class="concepto bg-white border border-gray-300 text-xs rounded p-2" required>
-          <select class="pdv_dest_id bg-white border border-gray-300 text-xs rounded p-2">${pdvOptions}</select>
-          <div class="flex gap-2">
-            <input type="number" step="0.01" placeholder="Monto (€)" class="monto bg-white border border-gray-300 text-xs rounded p-2 w-full" required>
-            <button type="button" onclick="document.getElementById('gasto_${id}').remove()" class="text-red-500 hover:text-red-700 font-bold px-2">✕</button>
-          </div>
-        </div>
-      `;
-      cont.insertAdjacentHTML('beforeend', html);
-    }
-
     document.getElementById('formCierre').addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      const btn = document.getElementById('btnGuardar');
+      btn.disabled = true;
+      btn.innerText = 'Guardando...';
 
       const pdv_origen_id = document.getElementById('pdv_origen_id').value;
       const fecha = document.getElementById('fecha').value;
@@ -184,15 +188,15 @@
       const total_tarjeta = parseFloat(document.getElementById('total_tarjeta').value) || 0;
       const observaciones = document.getElementById('observaciones').value;
 
-      const adelantos = Array.from(document.querySelectorAll('#contenedor_adelantos > div')).map(div => ({
-        empleado_id: div.querySelector('.emp_id').value,
-        pdv_destino_id: div.querySelector('.pdv_dest_id').value || pdv_origen_id,
+      const gastos = Array.from(document.querySelectorAll('#contenedor_gastos > div')).map(div => ({
+        concepto: div.querySelector('.concepto').value,
+        pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
         monto: parseFloat(div.querySelector('.monto').value) || 0
       }));
 
-      const gastos = Array.from(document.querySelectorAll('#contenedor_gastos > div')).map(div => ({
-        concepto: div.querySelector('.concepto').value,
-        pdv_destino_id: div.querySelector('.pdv_dest_id').value || pdv_origen_id,
+      const adelantos = Array.from(document.querySelectorAll('#contenedor_adelantos > div')).map(div => ({
+        empleado_id: div.querySelector('.emp_id').value,
+        pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
         monto: parseFloat(div.querySelector('.monto').value) || 0
       }));
 
@@ -212,6 +216,8 @@
         window.location.reload();
       } catch (err) {
         alert(`Error al guardar: ${err.message}`);
+        btn.disabled = false;
+        btn.innerText = 'Guardar Cierre de Caja';
       }
     });
 
