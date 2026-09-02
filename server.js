@@ -1,134 +1,160 @@
 import express from 'express';
+import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const app = express();
+const port = process.env.PORT || 10000;
+
+// Configuración de Middlewares
+app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static('public')); // Servir archivos estáticos como cierre.html
 
-// Sanitizar URL y Key de Supabase
-const rawUrl = process.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.trim().replace(/\/+$/, '');
-const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+// Inicialización de Supabase con Service Role Key
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Error: Faltan las variables de entorno de Supabase.');
+  process.exit(1);
+}
 
-// 1. Endpoint: Obtener Puntos de Venta
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// Helper para interactuar exclusivamente con el esquema astra_festum
+const db = supabase.schema('astra_festum');
+
+// ==========================================
+// ENDPOINTS API
+// ==========================================
+
+// 1. Obtener lista de Puntos de Venta (PDVs) activos
 app.get('/api/puntos-venta', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .schema('astra_festum')
+    const { data, error } = await db
       .from('puntos_venta')
-      .select('id, nombre')
+      .select('id, nombre, activo')
       .eq('activo', true)
-      .order('nombre');
+      .order('nombre', { ascending: true });
 
     if (error) throw error;
-    res.json({ success: true, data });
+    res.json(data);
   } catch (err) {
-    console.error('Error al obtener puntos de venta:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error en GET /api/puntos-venta:', err.message);
+    res.status(500).json({ error: 'Error al obtener los puntos de venta' });
   }
 });
 
-// 2. Endpoint: Obtener Empleados
+// 2. Obtener lista de Empleados activos
 app.get('/api/empleados', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .schema('astra_festum')
+    const { data, error } = await db
       .from('empleados')
-      .select('id, nombre')
+      .select('id, nombre, apellidos, activo')
       .eq('activo', true)
-      .order('nombre');
+      .order('nombre', { ascending: true });
 
     if (error) throw error;
-    res.json({ success: true, data });
+    res.json(data);
   } catch (err) {
-    console.error('Error al obtener empleados:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error en GET /api/empleados:', err.message);
+    res.status(500).json({ error: 'Error al obtener la lista de empleados' });
   }
 });
 
-// 3. Endpoint: Registrar Cierre de Caja
-app.post('/api/cierre-caja', async (req, res) => {
+// 3. Procesar Cierre de Caja con Gastos y Adelantos Cruzados
+app.post('/api/cierre', async (req, res) => {
   try {
-    const { fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones, adelantos, gastos } = req.body;
+    const {
+      pdv_origen_id,
+      fecha,
+      total_efectivo,
+      total_tarjeta,
+      observaciones,
+      gastos,
+      adelantos
+    } = req.body;
 
-    const { data: venta, error: ventaErr } = await supabase
-      .schema('astra_festum')
-      .from('ventas_diarias')
-      .insert([{ fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones }])
-      .select()
+    // Validación básica de campos requeridos
+    if (!pdv_origen_id || total_efectivo === undefined || total_tarjeta === undefined) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios en el cierre' });
+    }
+
+    // A. Insertar cabecera del Cierre
+    const { data: cierreData, error: cierreError } = await db
+      .from('cierres')
+      .insert([
+        {
+          pdv_id: pdv_origen_id,
+          fecha: fecha || new Date().toISOString(),
+          total_efectivo,
+          total_tarjeta,
+          observaciones
+        }
+      ])
+      .select('id')
       .single();
 
-    if (ventaErr) throw ventaErr;
+    if (cierreError) throw cierreError;
 
-    if (adelantos && adelantos.length > 0) {
-      const adelantosFormatted = adelantos.map(a => ({ ...a, venta_id: venta.id }));
-      const { error: adErr } = await supabase
-        .schema('astra_festum')
-        .from('adelantos_empleados')
-        .insert(adelantosFormatted);
-      if (adErr) throw adErr;
+    const cierreId = cierreData.id;
+
+    // B. Insertar Gastos (asociando caja origen y PDV destino imputado)
+    if (gastos && Array.isArray(gastos) && gastos.length > 0) {
+      const gastosFormateados = gastos.map(g => ({
+        cierre_id: cierreId,
+        pdv_origen_id: pdv_origen_id,
+        pdv_destino_id: g.pdv_destino_id || pdv_origen_id,
+        monto: g.monto,
+        concepto: g.concepto
+      }));
+
+      const { error: gastosError } = await db
+        .from('gastos')
+        .insert(gastosFormateados);
+
+      if (gastosError) throw gastosError;
     }
 
-    if (gastos && gastos.length > 0) {
-      const gastosFormatted = gastos.map(g => ({ ...g, venta_id: venta.id }));
-      const { error: gErr } = await supabase
-        .schema('astra_festum')
-        .from('gastos_caja')
-        .insert(gastosFormatted);
-      if (gErr) throw gErr;
+    // C. Insertar Adelantos/Abonos de Empleados (caja origen y PDV/empleado imputado)
+    if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
+      const adelantosFormateados = adelantos.map(a => ({
+        cierre_id: cierreId,
+        pdv_origen_id: pdv_origen_id,
+        pdv_destino_id: a.pdv_destino_id || pdv_origen_id,
+        empleado_id: a.empleado_id,
+        monto: a.monto,
+        observaciones: a.observaciones || ''
+      }));
+
+      const { error: adelantosError } = await db
+        .from('adelantos')
+        .insert(adelantosFormateados);
+
+      if (adelantosError) throw adelantosError;
     }
 
-    res.json({ success: true, id: venta.id });
+    // Respuesta exitosa
+    res.status(201).json({
+      success: true,
+      message: 'Cierre registrado correctamente',
+      cierre_id: cierreId
+    });
+
   } catch (err) {
-    console.error('Error en /api/cierre-caja:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error en POST /api/cierre:', err.message);
+    res.status(500).json({ error: 'Error interno al registrar el cierre de caja' });
   }
 });
 
-// 4. Endpoint: Obtener Histórico de Cierres
-app.get('/api/cierres', async (req, res) => {
-  try {
-    const { data: ventas, error: vErr } = await supabase
-      .schema('astra_festum')
-      .from('ventas_diarias')
-      .select('*')
-      .order('fecha', { ascending: false });
-
-    if (vErr) throw vErr;
-
-    const { data: adelantos, error: aErr } = await supabase
-      .schema('astra_festum')
-      .from('adelantos_empleados')
-      .select('*');
-
-    if (aErr) throw aErr;
-
-    const { data: gastos, error: gErr } = await supabase
-      .schema('astra_festum')
-      .from('gastos_caja')
-      .select('*');
-
-    if (gErr) throw gErr;
-
-    const result = (ventas || []).map(v => ({
-      ...v,
-      adelantos_empleados: (adelantos || []).filter(a => a.venta_id === v.id),
-      gastos_caja: (gastos || []).filter(g => g.venta_id === v.id)
-    }));
-
-    res.json({ success: true, data: result });
-  } catch (err) {
-    console.error('Error al obtener cierres:', err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log('Servidor Astra Festum activo en puerto ' + PORT);
+// Inicialización del servidor
+app.listen(port, () => {
+  console.log(`Servidor Astra Festum activo en puerto ${port}`);
 });
