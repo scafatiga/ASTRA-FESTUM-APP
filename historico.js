@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!response.ok) throw new Error('Error al obtener el histórico');
 
         const cierres = await response.json();
-        console.log("ESTRUCTURA DE CIERRES RECIBIDA:", cierres); // Inspecciona esto en F12
 
         if (!cierres || cierres.length === 0) {
             tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-gray-500">No hay cierres registrados.</td></tr>`;
@@ -30,18 +29,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const efectivo = Number(c.total_efectivo ?? c.efectivo ?? c.totalEfectivo ?? 0);
             const tarjeta = Number(c.total_tarjeta ?? c.tarjeta ?? c.totalTarjeta ?? 0);
-            const totalBruto = efectivo + tarjeta;
+            
+            // Si el registro antiguo tiene 'total' pero no bruto calculado, lo usamos como respaldo
+            const totalBruto = Number(c.total ?? (efectivo + tarjeta));
 
-            // Buscamos cualquier posible variante de nombres para gastos y adelantos
             const gastos = c.gastos || c.gastosList || c.listaGastos || c.gasto || [];
             const totalGastos = Array.isArray(gastos) 
-                ? gastos.reduce((sum, g) => sum + Number(g.importe || g.monto || g.valor || g.precio || 0), 0)
-                : Number(gastos || 0);
+                ? gastos.reduce((sum, g) => sum + Number(g.importe || g.monto || g.valor || 0), 0)
+                : Number(c.total_gastos || c.gastos || 0);
 
             const adelantos = c.adelantos || c.adelantosList || c.listaAdelantos || c.adelanto || [];
             const totalAdelantos = Array.isArray(adelantos) 
-                ? adelantos.reduce((sum, a) => sum + Number(a.importe || a.monto || a.valor || a.precio || 0), 0)
-                : Number(adelantos || 0);
+                ? adelantos.reduce((sum, a) => sum + Number(a.importe || a.monto || a.valor || 0), 0)
+                : Number(c.total_adelantos || c.adelantos || 0);
 
             const cashNeto = efectivo - totalGastos - totalAdelantos;
 
