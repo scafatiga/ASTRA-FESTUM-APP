@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         tbody.innerHTML = cierres.map(c => {
-            // Fecha
             const rawFecha = c.fecha || c.created_at || c.createdAt || c.timestamp;
             let fechaFormateada = 'Fecha no disponible';
             if (rawFecha) {
@@ -26,26 +25,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            // Punto de Venta (buscando todas las variantes posibles)
-            const puntoVenta = c.punto_venta || c.puntoVenta || c.puntoventa || c.pv || 'No especificado';
+            // Si no viene definido, se asigna 'Alicante' por defecto en lugar de 'No especificado'
+            const puntoVenta = c.punto_venta || c.puntoVenta || c.puntoventa || c.pv || 'Alicante';
 
-            // Totales
             const efectivo = Number(c.total_efectivo ?? c.efectivo ?? c.totalEfectivo ?? 0);
             const tarjeta = Number(c.total_tarjeta ?? c.tarjeta ?? c.totalTarjeta ?? 0);
             const totalBruto = efectivo + tarjeta;
 
-            // Gastos (buscando array en cualquier propiedad posible)
             const gastos = c.gastos || c.gastosList || c.listaGastos || [];
             const totalGastos = gastos.reduce((sum, g) => sum + Number(g.importe || g.monto || g.valor || 0), 0);
 
-            // Adelantos (buscando array en cualquier propiedad posible)
             const adelantos = c.adelantos || c.adelantosList || c.listaAdelantos || [];
             const totalAdelantos = adelantos.reduce((sum, a) => sum + Number(a.importe || a.monto || a.valor || 0), 0);
 
-            // Cash Neto
             const cashNeto = efectivo - totalGastos - totalAdelantos;
 
-            // Construir detalles visuales
             let detallesHtml = '<div class="space-y-1 text-xs">';
             if (gastos.length > 0) {
                 detallesHtml += '<div class="font-semibold text-red-600">Gastos:</div>';
