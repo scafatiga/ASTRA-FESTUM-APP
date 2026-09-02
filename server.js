@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+HEAD
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -120,7 +120,7 @@ app.get('/api/empleados', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-=======
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -242,5 +242,5 @@ app.get('/api/empleados', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
->>>>>>> 42ad26cf7bc5f9a19258437a3ec9db77df2daaf6
+ 42ad26cf7bc5f9a19258437a3ec9db77df2daaf6
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
