@@ -28,13 +28,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
 
-      // Obtener valores numéricos con respaldo para evitar NaN o ceros erróneos
       const efectivo = parseFloat(c.total_efectivo ?? c.efectivo ?? 0);
       const tarjeta = parseFloat(c.total_tarjeta ?? c.tarjeta ?? 0);
       const totalCalculado = (efectivo + tarjeta).toFixed(2);
 
-      // Punto de venta (si viene ID largo, mostrar nombre amigable o el campo disponible)
-      const puntoVenta = c.punto_venta_nombre || c.punto_venta || c.pdv_id || '-';
+      // Limpiar o mostrar el punto de venta
+      let puntoVenta = c.punto_venta || c.pdv_id || '-';
+      // Si el punto de venta es un UUID largo, puedes mapearlo o mostrar una etiqueta limpia
+      if (puntoVenta.length > 20) {
+        puntoVenta = "Punto de Venta Principal"; // O el nombre que corresponda
+      }
 
       row.innerHTML = `
         <td class="p-3 font-medium text-gray-900">${fechaFormateada}</td>
