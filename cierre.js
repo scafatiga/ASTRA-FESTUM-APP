@@ -7,30 +7,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function agregarGastoFila() {
         const div = document.createElement('div');
-        div.className = 'flex items-center gap-2 mb-2';
+        // Grid: en móvil, concepto ocupa toda la fila (3 columnas) y
+        // importe/punto de venta/borrar se reparten en 3 columnas iguales debajo.
+        // En pantallas sm+ vuelve a ser una fila horizontal normal.
+        div.className = 'grid grid-cols-3 sm:flex sm:items-center gap-2 mb-2';
         div.innerHTML = `
-            <input type="text" placeholder="Concepto / Descripción" class="gasto-desc border p-2 rounded flex-grow text-sm" required>
-            <input type="number" step="0.01" placeholder="Importe (€)" class="gasto-importe border p-2 rounded w-28 text-sm" required>
-            <select class="gasto-pv border p-2 rounded w-32 text-sm">
+            <input type="text" placeholder="Concepto / Descripción" class="gasto-desc col-span-3 sm:flex-1 min-w-0 border p-2 rounded w-full text-sm" required>
+            <input type="number" step="0.01" placeholder="Importe (€)" class="gasto-importe min-w-0 border p-2 rounded w-full sm:w-28 text-sm" required>
+            <select class="gasto-pv min-w-0 border p-2 rounded w-full sm:w-32 text-sm">
                 <option value="Alicante">Alicante</option>
                 <option value="Madrid">Madrid</option>
             </select>
-            <button type="button" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition" onclick="this.parentElement.remove()">✕</button>
+            <button type="button" class="bg-red-500 hover:bg-red-600 text-white rounded text-sm transition min-w-0 w-full sm:w-auto py-2 sm:px-3 sm:py-2" onclick="this.parentElement.remove()">✕</button>
         `;
         gastosContainer.appendChild(div);
     }
 
     function agregarAdelantoFila() {
         const div = document.createElement('div');
-        div.className = 'flex items-center gap-2 mb-2';
+        div.className = 'grid grid-cols-3 sm:flex sm:items-center gap-2 mb-2';
         div.innerHTML = `
-            <input type="text" placeholder="Nombre Empleado" class="adelanto-emp border p-2 rounded flex-grow text-sm" required>
-            <input type="number" step="0.01" placeholder="Importe (€)" class="adelanto-importe border p-2 rounded w-28 text-sm" required>
-            <select class="adelanto-pv border p-2 rounded w-32 text-sm">
+            <input type="text" placeholder="Nombre Empleado" class="adelanto-emp col-span-3 sm:flex-1 min-w-0 border p-2 rounded w-full text-sm" required>
+            <input type="number" step="0.01" placeholder="Importe (€)" class="adelanto-importe min-w-0 border p-2 rounded w-full sm:w-28 text-sm" required>
+            <select class="adelanto-pv min-w-0 border p-2 rounded w-full sm:w-32 text-sm">
                 <option value="Alicante">Alicante</option>
                 <option value="Madrid">Madrid</option>
             </select>
-            <button type="button" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition" onclick="this.parentElement.remove()">✕</button>
+            <button type="button" class="bg-red-500 hover:bg-red-600 text-white rounded text-sm transition min-w-0 w-full sm:w-auto py-2 sm:px-3 sm:py-2" onclick="this.parentElement.remove()">✕</button>
         `;
         adelantosContainer.appendChild(div);
     }
