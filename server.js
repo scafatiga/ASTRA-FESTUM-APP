@@ -34,41 +34,62 @@ const db = supabase.schema('astra_festum');
 // ENDPOINTS API
 // ==========================================
 
-// 1. Obtener lista de Puntos de Venta (PDVs) activos
+// 1. Obtener lista de Puntos de Venta (PDVs)
 app.get('/api/puntos-venta', async (req, res) => {
   try {
     const { data, error } = await db
       .from('puntos_venta')
-      .select('id, nombre, activo')
-      .eq('activo', true)
-      .order('nombre', { ascending: true });
+      .select('*');
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase PDVs:', error);
+      throw error;
+    }
     res.json(data);
   } catch (err) {
     console.error('Error en GET /api/puntos-venta:', err.message);
-    res.status(500).json({ error: 'Error al obtener los puntos de venta' });
+    res.status(500).json({ error: err.message || 'Error al obtener puntos de venta' });
   }
 });
 
-// 2. Obtener lista de Empleados activos
+// 2. Obtener lista de Empleados
 app.get('/api/empleados', async (req, res) => {
   try {
     const { data, error } = await db
       .from('empleados')
-      .select('id, nombre, apellidos, activo')
-      .eq('activo', true)
-      .order('nombre', { ascending: true });
+      .select('*');
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase Empleados:', error);
+      throw error;
+    }
     res.json(data);
   } catch (err) {
     console.error('Error en GET /api/empleados:', err.message);
-    res.status(500).json({ error: 'Error al obtener la lista de empleados' });
+    res.status(500).json({ error: err.message || 'Error al obtener empleados' });
   }
 });
 
-// 3. Procesar Cierre de Caja con Gastos y Adelantos Cruzados
+// 3. Obtener histórico de Cierres de Caja
+app.get('/api/cierres', async (req, res) => {
+  try {
+    const { data, error } = await db
+      .from('cierres')
+      .select('*')
+      .order('fecha', { ascending: false });
+
+    if (error) {
+      console.error('Error Supabase Cierres:', error);
+      throw error;
+    }
+    res.json(data);
+  } catch (err) {
+    console.error('Error en GET /api/cierres:', err.message);
+    res.status(500).json({ error: err.message || 'Error al obtener el histórico de cierres' });
+  }
+});
+
+// 4. Procesar Cierre de Caja con Gastos y Adelantos Cruzados
 app.post('/api/cierre', async (req, res) => {
   try {
     const {
