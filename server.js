@@ -17,7 +17,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// Configuración de cliente Supabase con el esquema astra_festum
+// Configuración del cliente Supabase con targeting explicito al esquema
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   db: { schema: 'astra_festum' },
   global: {
@@ -44,7 +44,6 @@ const parseId = (val) => {
 app.get('/api/puntos-venta', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .schema('astra_festum')
       .from('puntos_venta')
       .select('*')
       .order('id', { ascending: true });
@@ -60,7 +59,6 @@ app.get('/api/puntos-venta', async (req, res) => {
 app.get('/api/empleados', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .schema('astra_festum')
       .from('empleados')
       .select('*')
       .order('id', { ascending: true });
@@ -76,7 +74,6 @@ app.get('/api/empleados', async (req, res) => {
 app.get('/api/cierres', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .schema('astra_festum')
       .from('cierres')
       .select('*')
       .order('fecha', { ascending: false });
@@ -107,9 +104,8 @@ app.post('/api/cierre', async (req, res) => {
 
     const pdvOrigenParsed = parseId(pdv_origen_id);
 
-    // 1. Insertar Cierre
+    // 1. Insertar Registro Principal en 'cierres'
     const { data: cierreData, error: cierreError } = await supabase
-      .schema('astra_festum')
       .from('cierres')
       .insert([
         {
@@ -124,13 +120,13 @@ app.post('/api/cierre', async (req, res) => {
       .single();
 
     if (cierreError) {
-      console.error('Error Supabase Cierres:', cierreError);
+      console.error('Error al insertar cierre en Supabase:', cierreError);
       return res.status(500).json({ error: `Cierres: ${cierreError.message}` });
     }
 
     const cierreId = cierreData.id;
 
-    // 2. Insertar Gastos
+    // 2. Insertar Gastos opcionales
     if (gastos && Array.isArray(gastos) && gastos.length > 0) {
       const gastosFormateados = gastos.map(g => ({
         cierre_id: cierreId,
@@ -141,17 +137,16 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: gastosError } = await supabase
-        .schema('astra_festum')
         .from('gastos')
         .insert(gastosFormateados);
 
       if (gastosError) {
-        console.error('Error Supabase Gastos:', gastosError);
+        console.error('Error al insertar gastos en Supabase:', gastosError);
         return res.status(500).json({ error: `Gastos: ${gastosError.message}` });
       }
     }
 
-    // 3. Insertar Adelantos
+    // 3. Insertar Adelantos opcionales
     if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
       const adelantosFormateados = adelantos.map(a => ({
         cierre_id: cierreId,
@@ -163,12 +158,11 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: adelantosError } = await supabase
-        .schema('astra_festum')
         .from('adelantos')
         .insert(adelantosFormateados);
 
       if (adelantosError) {
-        console.error('Error Supabase Adelantos:', adelantosError);
+        console.error('Error al insertar adelantos en Supabase:', adelantosError);
         return res.status(500).json({ error: `Adelantos: ${adelantosError.message}` });
       }
     }
@@ -180,13 +174,13 @@ app.post('/api/cierre', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error en POST /api/cierre:', err);
+    console.error('Error no controlado en POST /api/cierre:', err);
     return res.status(500).json({ error: err.message || 'Error interno en el servidor' });
   }
 });
 
 // ==========================================
-// SERVIDOR
+// ARRANQUE DEL SERVIDOR
 // ==========================================
 const server = app.listen(port, () => {
   console.log(`Servidor Astra Festum activo en el puerto ${port}`);
@@ -194,8 +188,8 @@ const server = app.listen(port, () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Puerto ${port} ocupado.`);
+    console.error(`Error: El puerto ${port} ya está ocupado.`);
   } else {
-    console.error('Error servidor:', err);
+    console.error('Error de servidor:', err);
   }
 });
