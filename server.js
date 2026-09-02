@@ -83,11 +83,41 @@ app.get('/api/cierres', async (req, res) => {
 });
 
 app.post('/api/cierres', async (req, res) => {
-  const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
+  const {
+    fecha,
+    punto_venta,
+    total_efectivo,
+    total_tarjeta,
+    observaciones,
+    gastos,
+    adelantos
+  } = req.body;
+
+  // Validación básica: sin punto_venta no tiene sentido guardar el cierre
+  if (!punto_venta) {
+    return res.status(400).json({ error: 'Falta punto_venta en la petición' });
+  }
+
+  // gastos/adelantos siempre deben ser arrays (aunque vengan vacíos) antes de guardarlos como JSON
+  const gastosJson = JSON.stringify(Array.isArray(gastos) ? gastos : []);
+  const adelantosJson = JSON.stringify(Array.isArray(adelantos) ? adelantos : []);
+
   try {
     const { rows } = await pool.query(
-      'INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [fecha, punto_venta, total_efectivo, total_tarjeta, observaciones]
+      `INSERT INTO cierres
+        (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos)
+       VALUES
+        (COALESCE($1, NOW()), $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+       RETURNING *`,
+      [
+        fecha || null,
+        punto_venta,
+        total_efectivo || 0,
+        total_tarjeta || 0,
+        observaciones || '',
+        gastosJson,
+        adelantosJson
+      ]
     );
     res.json(rows[0]);
   } catch (err) {
