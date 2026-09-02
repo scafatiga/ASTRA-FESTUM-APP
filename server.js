@@ -1,7 +1,7 @@
-require('dotenv').config();
-const express = require('express');
-const { createClient } = require('@supabase/supabase-js');
-const path = require('path');
+import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const app = express();
 app.use(express.json());
@@ -13,50 +13,53 @@ const supabase = createClient(
   { db: { schema: 'astra_festum' } }
 );
 
+// Registrar Cierre
 app.post('/api/cierre-caja', async (req, res) => {
-  const { fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones, adelantos, gastos } = req.body;
-
   try {
-    const { data: venta, error: errVenta } = await supabase
+    const { fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones, adelantos, gastos } = req.body;
+
+    const { data: venta, error: ventaErr } = await supabase
       .from('ventas_diarias')
       .insert([{ fecha, punto_venta, usuario_email, total_efectivo, total_tarjeta, observaciones }])
       .select()
       .single();
 
-    if (errVenta) throw errVenta;
+    if (ventaErr) throw ventaErr;
 
     if (adelantos && adelantos.length > 0) {
-      const listaAdelantos = adelantos.map(a => ({
-        venta_id: venta.id,
-        fecha,
-        punto_venta,
-        empleado_nombre: a.empleado_nombre,
-        importe: a.importe
-      }));
-      const { error: errAdelantos } = await supabase.from('adelantos_empleados').insert(listaAdelantos);
-      if (errAdelantos) throw errAdelantos;
+      const adelantosFormatted = adelantos.map(a => ({ ...a, venta_id: venta.id }));
+      const { error: adErr } = await supabase.from('adelantos_empleados').insert(adelantosFormatted);
+      if (adErr) throw adErr;
     }
 
     if (gastos && gastos.length > 0) {
-      const listaGastos = gastos.map(g => ({
-        venta_id: venta.id,
-        fecha,
-        punto_venta,
-        proveedor_nombre: g.proveedor_nombre || null,
-        concepto: g.concepto,
-        importe: g.importe,
-        metodo_pago: g.metodo_pago || 'EFECTIVO'
-      }));
-      const { error: errGastos } = await supabase.from('gastos_caja').insert(listaGastos);
-      if (errGastos) throw errGastos;
+      const gastosFormatted = gastos.map(g => ({ ...g, venta_id: venta.id }));
+      const { error: gErr } = await supabase.from('gastos_caja').insert(gastosFormatted);
+      if (gErr) throw gErr;
     }
 
-    res.status(200).json({ success: true, message: 'Cierre registrado correctamente', venta_id: venta.id });
+    res.json({ success: true, id: venta.id });
   } catch (err) {
-    console.error('Error al guardar cierre:', err);
+    console.error('Error en /api/cierre-caja:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor Astra Festum activo en puerto ${PORT}`));
+// Obtener Histórico de Cierres
+app.get('/api/cierres', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('ventas_diarias')
+      .select('*, adelantos_empleados(*), gastos_caja(*)')
+      .order('fecha', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('Error al obtener cierres:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(Servidor Astra Festum activo en puerto ));
