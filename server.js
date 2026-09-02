@@ -61,4 +61,6 @@ app.get('/api/cierres', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(Servidor Astra Festum activo en puerto ));
+app.listen(PORT, function() {
+  console.log('Servidor Astra Festum activo en puerto ' + PORT);
+});
