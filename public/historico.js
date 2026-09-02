@@ -19,7 +19,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       const row = document.createElement("tr");
       row.className = "hover:bg-gray-50";
 
-      // Formatear la fecha
       let fechaFormateada = c.fecha || '-';
       if (fechaFormateada.includes('T')) {
         const partes = fechaFormateada.split('T')[0].split('-');
@@ -32,12 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const tarjeta = parseFloat(c.total_tarjeta ?? c.tarjeta ?? 0);
       const totalCalculado = (efectivo + tarjeta).toFixed(2);
 
-      // Limpiar o mostrar el punto de venta
-      let puntoVenta = c.punto_venta || c.pdv_id || '-';
-      // Si el punto de venta es un UUID largo, puedes mapearlo o mostrar una etiqueta limpia
-      if (puntoVenta.length > 20) {
-        puntoVenta = "Punto de Venta Principal"; // O el nombre que corresponda
-      }
+      const puntoVenta = c.punto_venta || '-';
 
       row.innerHTML = `
         <td class="p-3 font-medium text-gray-900">${fechaFormateada}</td>
