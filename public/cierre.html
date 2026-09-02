@@ -15,11 +15,10 @@
     </div>
 
     <form id="formCierre" class="space-y-6">
-      <!-- Fecha y Usuario -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Fecha</label>
-          <input type="date" id="fecha" required class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+          <input type="date" id="fecha" required class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5">
         </div>
         <div>
           <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Usuario Email</label>
@@ -27,16 +26,13 @@
         </div>
       </div>
 
-      <!-- Punto de Venta Origen -->
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Punto de Venta</label>
-        <select id="pdv_origen_id" required class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+        <select id="pdv_origen_id" required class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5">
           <option value="">Cargando puntos de venta...</option>
         </select>
-        <p id="pdv_error_msg" class="hidden text-xs text-red-500 mt-1">No se encontraron puntos de venta</p>
       </div>
 
-      <!-- Totales -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Total Efectivo (€)</label>
@@ -48,7 +44,7 @@
         </div>
       </div>
 
-      <!-- 1. Gastos (Primero) -->
+      <!-- Gastos -->
       <div class="border-t border-gray-200 pt-4">
         <div class="flex justify-between items-center mb-3">
           <h2 class="text-sm font-bold text-gray-700">Gastos Pagados con Caja</h2>
@@ -57,7 +53,7 @@
         <div id="contenedor_gastos" class="space-y-2"></div>
       </div>
 
-      <!-- 2. Adelantos (Segundo) -->
+      <!-- Adelantos -->
       <div class="border-t border-gray-200 pt-4">
         <div class="flex justify-between items-center mb-3">
           <h2 class="text-sm font-bold text-gray-700">Adelantos a Empleados</h2>
@@ -66,13 +62,11 @@
         <div id="contenedor_adelantos" class="space-y-2"></div>
       </div>
 
-      <!-- Observaciones -->
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Observaciones</label>
         <textarea id="observaciones" rows="3" placeholder="Notas adicionales..." class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5"></textarea>
       </div>
 
-      <!-- Botón Guardar -->
       <button type="submit" id="btnGuardar" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow transition duration-200">Guardar Cierre de Caja</button>
     </form>
   </div>
@@ -90,47 +84,29 @@
           fetch('/api/empleados')
         ]);
 
-        if (!resPDVs.ok || !resEmp.ok) throw new Error('Error al consultar servidor');
+        if (!resPDVs.ok || !resEmp.ok) throw new Error('Error al conectar con la API');
 
         listaPDVs = await resPDVs.json();
         listaEmpleados = await resEmp.json();
 
-        poblarSelectPDV();
-      } catch (err) {
-        console.error('Error cargando catálogos:', err);
         const select = document.getElementById('pdv_origen_id');
-        select.innerHTML = '<option value="">Error de conexión</option>';
-        document.getElementById('pdv_error_msg').classList.remove('hidden');
+        select.innerHTML = '<option value="">-- Seleccionar PDV --</option>';
+        listaPDVs.forEach(p => {
+          const nombre = p.nombre || p.denominacion || p.nombre_pdv || `PDV #${p.id}`;
+          select.innerHTML += `<option value="${p.id}">${nombre}</option>`;
+        });
+      } catch (err) {
+        console.error(err);
+        document.getElementById('pdv_origen_id').innerHTML = '<option value="">Error cargando datos</option>';
       }
-    }
-
-    function poblarSelectPDV() {
-      const select = document.getElementById('pdv_origen_id');
-      const errorMsg = document.getElementById('pdv_error_msg');
-
-      if (!listaPDVs || listaPDVs.length === 0) {
-        select.innerHTML = '<option value="">-- Sin Puntos de Venta --</option>';
-        errorMsg.classList.remove('hidden');
-        return;
-      }
-
-      errorMsg.classList.add('hidden');
-      select.innerHTML = '<option value="">-- Seleccionar PDV --</option>';
-      
-      listaPDVs.forEach(pdv => {
-        const nombreDisplay = pdv.nombre || pdv.denominacion || pdv.nombre_pdv || `PDV #${pdv.id}`;
-        select.innerHTML += `<option value="${pdv.id}">${nombreDisplay}</option>`;
-      });
     }
 
     function agregarFilaGasto() {
       const cont = document.getElementById('contenedor_gastos');
       const id = Date.now();
-
       let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
       listaPDVs.forEach(p => {
-        const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
-        pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
+        pdvOptions += `<option value="${p.id}">${p.nombre || p.denominacion || `PDV #${p.id}`}</option>`;
       });
 
       const html = `
@@ -139,7 +115,7 @@
           <select class="pdv_dest_id bg-white border border-gray-300 text-xs rounded p-2">${pdvOptions}</select>
           <div class="flex gap-2">
             <input type="number" step="0.01" placeholder="Monto (€)" class="monto bg-white border border-gray-300 text-xs rounded p-2 w-full" required>
-            <button type="button" onclick="document.getElementById('gasto_${id}').remove()" class="text-red-500 hover:text-red-700 font-bold px-2">✕</button>
+            <button type="button" onclick="document.getElementById('gasto_${id}').remove()" class="text-red-500 font-bold px-2">✕</button>
           </div>
         </div>
       `;
@@ -149,17 +125,15 @@
     function agregarFilaAdelanto() {
       const cont = document.getElementById('contenedor_adelantos');
       const id = Date.now();
-      
       let empOptions = '<option value="">-- Seleccionar Empleado --</option>';
       listaEmpleados.forEach(e => {
-        const nombreEmp = e.nombre_completo || `${e.nombre || ''} ${e.apellidos || ''}`.trim() || `Empleado #${e.id}`;
-        empOptions += `<option value="${e.id}">${nombreEmp}</option>`;
+        const nombre = e.nombre_completo || `${e.nombre || ''} ${e.apellidos || ''}`.trim() || `Empleado #${e.id}`;
+        empOptions += `<option value="${e.id}">${nombre}</option>`;
       });
 
       let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
       listaPDVs.forEach(p => {
-        const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
-        pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
+        pdvOptions += `<option value="${p.id}">${p.nombre || p.denominacion || `PDV #${p.id}`}</option>`;
       });
 
       const html = `
@@ -168,7 +142,7 @@
           <select class="pdv_dest_id bg-white border border-gray-300 text-xs rounded p-2">${pdvOptions}</select>
           <div class="flex gap-2">
             <input type="number" step="0.01" placeholder="Monto (€)" class="monto bg-white border border-gray-300 text-xs rounded p-2 w-full" required>
-            <button type="button" onclick="document.getElementById('adelanto_${id}').remove()" class="text-red-500 hover:text-red-700 font-bold px-2">✕</button>
+            <button type="button" onclick="document.getElementById('adelanto_${id}').remove()" class="text-red-500 font-bold px-2">✕</button>
           </div>
         </div>
       `;
@@ -177,30 +151,27 @@
 
     document.getElementById('formCierre').addEventListener('submit', async (e) => {
       e.preventDefault();
-
       const btn = document.getElementById('btnGuardar');
       btn.disabled = true;
       btn.innerText = 'Guardando...';
 
-      const pdv_origen_id = document.getElementById('pdv_origen_id').value;
-      const fecha = document.getElementById('fecha').value;
-      const total_efectivo = parseFloat(document.getElementById('total_efectivo').value) || 0;
-      const total_tarjeta = parseFloat(document.getElementById('total_tarjeta').value) || 0;
-      const observaciones = document.getElementById('observaciones').value;
-
-      const gastos = Array.from(document.querySelectorAll('#contenedor_gastos > div')).map(div => ({
-        concepto: div.querySelector('.concepto').value,
-        pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
-        monto: parseFloat(div.querySelector('.monto').value) || 0
-      }));
-
-      const adelantos = Array.from(document.querySelectorAll('#contenedor_adelantos > div')).map(div => ({
-        empleado_id: div.querySelector('.emp_id').value,
-        pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
-        monto: parseFloat(div.querySelector('.monto').value) || 0
-      }));
-
-      const payload = { pdv_origen_id, fecha, total_efectivo, total_tarjeta, observaciones, adelantos, gastos };
+      const payload = {
+        pdv_origen_id: document.getElementById('pdv_origen_id').value,
+        fecha: document.getElementById('fecha').value,
+        total_efectivo: parseFloat(document.getElementById('total_efectivo').value) || 0,
+        total_tarjeta: parseFloat(document.getElementById('total_tarjeta').value) || 0,
+        observaciones: document.getElementById('observaciones').value,
+        gastos: Array.from(document.querySelectorAll('#contenedor_gastos > div')).map(div => ({
+          concepto: div.querySelector('.concepto').value,
+          pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
+          monto: parseFloat(div.querySelector('.monto').value) || 0
+        })),
+        adelantos: Array.from(document.querySelectorAll('#contenedor_adelantos > div')).map(div => ({
+          empleado_id: div.querySelector('.emp_id').value,
+          pdv_destino_id: div.querySelector('.pdv_dest_id').value || null,
+          monto: parseFloat(div.querySelector('.monto').value) || 0
+        }))
+      };
 
       try {
         const res = await fetch('/api/cierre', {
@@ -210,9 +181,9 @@
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al guardar el cierre');
+        if (!res.ok) throw new Error(data.error || 'Error al procesar el cierre');
 
-        alert('¡Cierre de caja guardado con éxito!');
+        alert('¡Cierre registrado correctamente!');
         window.location.reload();
       } catch (err) {
         alert(`Error al guardar: ${err.message}`);
