@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const adelantosContainer = document.getElementById('adelantosContainer');
     const cierreForm = document.getElementById('cierreForm');
 
-    // --- Carga de empleados desde el backend (una sola vez al abrir la página) ---
+    // --- Carga de empleados desde el backend (solo se usa en Adelantos) ---
     let empleadosCache = [];
 
     async function cargarEmpleados() {
@@ -35,15 +35,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function agregarGastoFila() {
         const div = document.createElement('div');
-        // Móvil: concepto ocupa toda la fila, empleado ocupa toda la fila debajo,
-        // y luego importe / punto de venta / borrar en 3 columnas iguales.
+        // Móvil: concepto ocupa toda la fila; importe/punto de venta/borrar en 3 columnas iguales debajo.
         // Desde md: todo en una fila horizontal normal.
         div.className = 'grid grid-cols-3 md:flex md:items-center gap-2 mb-2';
         div.innerHTML = `
             <input type="text" placeholder="Concepto / Descripción" class="gasto-desc col-span-3 md:flex-1 min-w-0 border p-2 rounded w-full text-sm" required>
-            <select class="gasto-empleado col-span-3 md:w-40 md:flex-shrink-0 min-w-0 border p-2 rounded w-full text-sm">
-                ${empleadoOptionsHtml()}
-            </select>
             <input type="number" step="0.01" placeholder="Importe (€)" class="gasto-importe min-w-0 border p-2 rounded w-full md:w-28 text-sm" required>
             <select class="gasto-pv min-w-0 border p-2 rounded w-full md:w-32 text-sm">
                 <option value="Alicante">Alicante</option>
@@ -92,9 +88,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const descripcion = row.querySelector('.gasto-desc').value;
                 const importe = parseFloat(row.querySelector('.gasto-importe').value) || 0;
                 const pv = row.querySelector('.gasto-pv').value;
-                const empleado = row.querySelector('.gasto-empleado').value;
                 if (descripcion && importe > 0) {
-                    gastos.push({ descripcion, importe, punto_venta: pv, empleado });
+                    gastos.push({ descripcion, importe, punto_venta: pv });
                 }
             });
 
