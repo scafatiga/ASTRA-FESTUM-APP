@@ -93,30 +93,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const datosEmpleado = {
-                nombre: document.getElementById('nombre').value.trim(),
-                dni: document.getElementById('dni').value.trim(),
-                numero_seguridad_social: document.getElementById('numeroSegSocial').value.trim(),
-                nacionalidad: document.getElementById('nacionalidad').value.trim(),
-                fecha_nacimiento: document.getElementById('fechaNacimiento').value || null,
-                iban: document.getElementById('iban').value.trim(),
-                domicilio: document.getElementById('domicilio').value.trim(),
-                fecha_in: document.getElementById('fechaIn').value || null,
-                fecha_out: document.getElementById('fechaOut').value || null,
-                horas_alta: parseFloat(document.getElementById('horasAlta').value) || null,
-                punto_venta_id: document.getElementById('puntoVenta').value || null,
-                direccion: document.getElementById('direccion').value.trim(),
-                email: document.getElementById('email').value.trim(),
-                foto_dni: document.getElementById('fotoDni').value.trim()
-            };
+            const nombre = document.getElementById('nombre').value.trim();
+            if (!nombre) return;
 
-            if (!datosEmpleado.nombre) return;
+            const formData = new FormData();
+            formData.append('nombre', nombre);
+            formData.append('dni', document.getElementById('dni').value.trim());
+            formData.append('numero_seguridad_social', document.getElementById('numeroSegSocial').value.trim());
+            formData.append('nacionalidad', document.getElementById('nacionalidad').value.trim());
+            formData.append('fecha_nacimiento', document.getElementById('fechaNacimiento').value || '');
+            formData.append('iban', document.getElementById('iban').value.trim());
+            formData.append('domicilio', document.getElementById('domicilio').value.trim());
+            formData.append('fecha_in', document.getElementById('fechaIn').value || '');
+            formData.append('fecha_out', document.getElementById('fechaOut').value || '');
+            formData.append('horas_alta', document.getElementById('horasAlta').value || '');
+            formData.append('punto_venta_id', document.getElementById('puntoVenta').value || '');
+            formData.append('email', document.getElementById('email').value.trim());
+
+            const archivoFotoDni = document.getElementById('fotoDni').files[0];
+            if (archivoFotoDni) {
+                formData.append('fotoDni', archivoFotoDni);
+            }
 
             try {
                 const res = await fetch('/api/personal', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datosEmpleado)
+                    body: formData
+                    // Sin header Content-Type: el navegador lo pone solo (multipart + boundary)
                 });
                 if (!res.ok) throw new Error('Error al crear empleado');
 
