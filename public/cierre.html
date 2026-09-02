@@ -72,6 +72,113 @@
 
   </div>
 
-  <script src="/cierre.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      let puntosVentaGlobal = [];
+      let empleadosGlobal = [];
+
+      // 1. Cargar Puntos de Venta
+      try {
+        const resPDV = await fetch("/api/puntos-venta");
+        puntosVentaGlobal = await resPDV.json();
+        
+        const selectPuntoVenta = document.getElementById("punto_venta");
+        puntosVentaGlobal.forEach(pdv => {
+          const opt = document.createElement("option");
+          opt.value = pdv.nombre;
+          opt.textContent = pdv.nombre;
+          selectPuntoVenta.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Error cargando puntos de venta:", err);
+      }
+
+      // 2. Cargar Lista de Empleados desde /api/usuarios
+      try {
+        const resEmp = await fetch("/api/usuarios");
+        if (resEmp.ok) {
+          empleadosGlobal = await resEmp.json();
+        }
+      } catch (err) {
+        console.error("Error cargando empleados:", err);
+      }
+
+      // Manejo de Gastos Dinámicos
+      const contenedorGastos = document.getElementById("contenedorGastos");
+      document.getElementById("btnAgregarGasto").addEventListener("click", () => {
+        const div = document.createElement("div");
+        div.className = "flex gap-2 items-center";
+        
+        let opcionesPDV = puntosVentaGlobal.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+
+        div.innerHTML = `
+          <input type="text" placeholder="Concepto del gasto" class="flex-1 border border-gray-300 rounded p-2 text-sm" required>
+          <input type="number" step="0.01" placeholder="Monto €" class="w-28 border border-gray-300 rounded p-2 text-sm" required>
+          <select class="w-40 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- PDV Destino --</option>
+            ${opcionesPDV}
+          </select>
+          <button type="button" class="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 btn-eliminar">✕</button>
+        `;
+        div.querySelector(".btn-eliminar").addEventListener("click", () => div.remove());
+        contenedorGastos.appendChild(div);
+      });
+
+      // Manejo de Adelantos Dinámicos
+      const contenedorAdelantos = document.getElementById("contenedorAdelantos");
+      document.getElementById("btnAgregarAdelanto").addEventListener("click", () => {
+        const div = document.createElement("div");
+        div.className = "flex gap-2 items-center";
+        
+        let opcionesEmpleados = empleadosGlobal.map(e => `<option value="${e.id}">${e.nombre || e.usuario || 'Empleado ' + e.id}</option>`).join('');
+        let opcionesPDV = puntosVentaGlobal.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+
+        div.innerHTML = `
+          <select class="flex-1 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- Selecciona Empleado --</option>
+            ${opcionesEmpleados}
+          </select>
+          <input type="number" step="0.01" placeholder="Monto €" class="w-28 border border-gray-300 rounded p-2 text-sm" required>
+          <select class="w-40 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- PDV Origen --</option>
+            ${opcionesPDV}
+          </select>
+          <button type="button" class="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 btn-eliminar">✕</button>
+        `;
+        div.querySelector(".btn-eliminar").addEventListener("click", () => div.remove());
+        contenedorAdelantos.appendChild(div);
+      });
+
+      // Enviar Formulario
+      document.getElementById("formCierre").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const fechaActual = new Date().toISOString().split('T')[0];
+        const cierreData = {
+          fecha: fechaActual,
+          punto_venta: document.getElementById("punto_venta").value,
+          total_efectivo: parseFloat(document.getElementById("total_efectivo").value) || 0,
+          total_tarjeta: parseFloat(document.getElementById("total_tarjeta").value) || 0,
+          observaciones: document.getElementById("observaciones").value
+        };
+
+        try {
+          const response = await fetch("/api/cierres", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cierreData)
+          });
+
+          if (!response.ok) throw new Error("Error al registrar el cierre");
+
+          alert("¡Cierre registrado con éxito!");
+          window.location.href = "/historico.html";
+        } catch (err) {
+          console.error(err);
+          alert("Hubo un error al guardar el cierre.");
+        }
+      });
+    });
+  </script>
 </body>
 </html>
