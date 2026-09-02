@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+HEAD
 document.addEventListener("DOMContentLoaded", async () => {
   const tbody = document.getElementById("tablaCierres");
 
@@ -51,7 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.error("Error cargando histórico:", err);
     tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar datos del servidor</td></tr>`;
   }
-=======
+
 document.addEventListener("DOMContentLoaded", async () => {
   const tbody = document.getElementById("tablaCierres");
 
@@ -104,5 +104,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.error("Error cargando histórico:", err);
     tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar datos del servidor</td></tr>`;
   }
->>>>>>> 42ad26cf7bc5f9a19258437a3ec9db77df2daaf6
+   42ad26cf7bc5f9a19258437a3ec9db77df2daaf6
 });
