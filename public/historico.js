@@ -1,45 +1,53 @@
-async function cargarCierres() {
-  const tbody = document.getElementById('tablaCierres');
+document.addEventListener("DOMContentLoaded", async () => {
+  const tbody = document.getElementById("tablaCierres");
+
   try {
-    const res = await fetch('/api/cierres');
-    const data = await res.json();
+    const response = await fetch("/api/cierres");
+    if (!response.ok) throw new Error("Error en la respuesta del servidor");
 
-    if (!data.success) {
-      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar datos: ' + (data.error || 'Error desconocido') + '</td></tr>';
+    const data = await response.json();
+    const cierres = Array.isArray(data) ? data : (data.data || []);
+
+    if (cierres.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay cierres registrados.</td></tr>`;
       return;
     }
 
-    if (!data.data || data.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay cierres registrados todavia.</td></tr>';
-      return;
-    }
+    tbody.innerHTML = "";
 
-    tbody.innerHTML = data.data.map(item => {
-      const total = (parseFloat(item.total_efectivo || 0) + parseFloat(item.total_tarjeta || 0)).toFixed(2);
-      
-      const adelantosText = (item.adelantos_empleados || []).map(a => a.empleado_nombre + ': ' + a.monto + ' EUR').join(', ');
-      const gastosText = (item.gastos_caja || []).map(g => g.concepto + ': ' + g.monto + ' EUR').join(', ');
-      
-      let detalles = [];
-      if (adelantosText) detalles.push('<b>Adelantos:</b> ' + adelantosText);
-      if (gastosText) detalles.push('<b>Gastos:</b> ' + gastosText);
-      if (item.observaciones) detalles.push('<b>Obs:</b> ' + item.observaciones);
+    cierres.forEach(c => {
+      const row = document.createElement("tr");
+      row.className = "hover:bg-gray-50";
 
-      return `
-        <tr class="hover:bg-gray-50">
-          <td class="p-3 font-medium text-gray-900">${item.fecha || '-'}</td>
-          <td class="p-3 text-gray-600">${item.punto_venta || '-'}</td>
-          <td class="p-3 text-gray-600">${parseFloat(item.total_efectivo || 0).toFixed(2)} EUR</td>
-          <td class="p-3 text-gray-600">${parseFloat(item.total_tarjeta || 0).toFixed(2)} EUR</td>
-          <td class="p-3 font-semibold text-emerald-600">${total} EUR</td>
-          <td class="p-3 text-xs text-gray-500">${detalles.join(' | ') || '-'}</td>
-        </tr>
+      let fechaFormateada = c.fecha || '-';
+      if (fechaFormateada.includes('T')) {
+        const partes = fechaFormateada.split('T')[0].split('-');
+        if (partes.length === 3) {
+          fechaFormateada = `${partes[2]}/${partes[1]}/${partes[0]}`;
+        }
+      }
+
+      const efectivo = parseFloat(c.total_efectivo ?? c.efectivo ?? 0);
+      const tarjeta = parseFloat(c.total_tarjeta ?? c.tarjeta ?? 0);
+      const totalCalculado = (efectivo + tarjeta).toFixed(2);
+
+      const puntoVenta = c.punto_venta || '-';
+
+      row.innerHTML = `
+        <td class="p-3 font-medium text-gray-900">${fechaFormateada}</td>
+        <td class="p-3 text-gray-700 font-semibold">${puntoVenta}</td>
+        <td class="p-3 text-gray-700">${efectivo.toFixed(2)} €</td>
+        <td class="p-3 text-gray-700">${tarjeta.toFixed(2)} €</td>
+        <td class="p-3 font-semibold text-gray-900">${totalCalculado} €</td>
+        <td class="p-3 text-gray-600 text-xs">
+          <div><strong>Obs:</strong> ${c.observaciones || 'Sin incidencias'}</div>
+        </td>
       `;
-    }).join('');
+      tbody.appendChild(row);
+    });
 
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Error de conexion con el servidor.</td></tr>';
+    console.error("Error cargando histórico:", err);
+    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar datos del servidor</td></tr>`;
   }
-}
-
-document.addEventListener('DOMContentLoaded', cargarCierres);
+});

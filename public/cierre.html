@@ -6,216 +6,179 @@
   <title>Cierre de Caja - Astra Festum</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 min-h-screen p-4 md:p-8">
-  <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 md:p-8">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold text-gray-800">Nuevo Cierre de Caja</h1>
-      <a href="/historico.html" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Ver Histórico</a>
+<body class="bg-gray-100 p-6 min-h-screen">
+  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+    
+    <div class="flex justify-between items-center mb-6 pb-4 border-b">
+      <h1 class="text-2xl font-bold text-gray-800">Astra Festum - Cierre de Caja</h1>
+      <div class="flex gap-2">
+        <a href="/" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm font-medium transition">Menú Principal</a>
+        <a href="/historico.html" class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded text-sm font-medium transition">Ver Histórico</a>
+      </div>
     </div>
 
-    <form id="cierreForm" onsubmit="guardarCierre(event)" class="space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-          <input type="date" id="fecha" required class="w-full border rounded-lg p-2.5 bg-gray-50">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Usuario Email</label>
-          <input type="email" id="usuario_email" value="admin@astrafestum.com" required class="w-full border rounded-lg p-2.5 bg-gray-50">
-        </div>
-      </div>
-
-      <!-- Selección de Punto de Venta por Botones -->
+    <form id="formCierre" class="space-y-6">
+      
+      <!-- Punto de Venta Actual -->
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Punto de Venta</label>
-        <div id="puntos-venta-container" class="flex flex-wrap gap-2">
-          <span class="text-gray-400 text-sm">Cargando puntos de venta...</span>
-        </div>
-        <input type="hidden" id="punto_venta" name="punto_venta" required />
+        <label class="block text-sm font-medium text-gray-700 mb-1">Punto de Venta Actual (Caja Origen):</label>
+        <select id="punto_venta" name="punto_venta" required class="w-full border border-gray-300 rounded p-2 focus:ring focus:ring-blue-200">
+          <option value="">-- Selecciona Punto de Venta --</option>
+        </select>
       </div>
 
       <!-- Totales -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (€)</label>
-          <input type="number" step="0.01" id="total_efectivo" placeholder="0.00" required class="w-full border rounded-lg p-2.5 text-lg font-semibold">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (€):</label>
+          <input type="number" step="0.01" id="total_efectivo" name="total_efectivo" value="0.00" required class="w-full border border-gray-300 rounded p-2">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (€)</label>
-          <input type="number" step="0.01" id="total_tarjeta" placeholder="0.00" required class="w-full border rounded-lg p-2.5 text-lg font-semibold">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (€):</label>
+          <input type="number" step="0.01" id="total_tarjeta" name="total_tarjeta" value="0.00" required class="w-full border border-gray-300 rounded p-2">
         </div>
       </div>
 
-      <!-- Adelantos a Empleados -->
-      <div class="border-t pt-4">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="font-semibold text-gray-700">Adelantos a Empleados</h2>
-          <button type="button" onclick="agregarFilaAdelanto()" class="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-200">+ Añadir Adelanto</button>
+      <!-- Gastos / Compras Físicas -->
+      <div class="border p-4 rounded-lg bg-gray-50">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">Gastos / Compras Físicas</h2>
+        <div id="contenedorGastos" class="space-y-3 mb-3">
+          <!-- Filas de gastos dinámicas -->
         </div>
-        <div id="adelantos-container" class="space-y-2"></div>
+        <button type="button" id="btnAgregarGasto" class="bg-gray-700 hover:bg-gray-800 text-white text-sm px-3 py-1.5 rounded transition">+ Agregar Gasto</button>
       </div>
 
-      <!-- Gastos de Caja -->
-      <div class="border-t pt-4">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="font-semibold text-gray-700">Gastos Pagados con Caja</h2>
-          <button type="button" onclick="agregarFilaGasto()" class="bg-orange-100 text-orange-700 px-3 py-1 rounded-lg text-sm font-medium hover:bg-orange-200">+ Añadir Gasto</button>
+      <!-- Adelantos / Abonos a Empleados -->
+      <div class="border p-4 rounded-lg bg-gray-50">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">Adelantos / Abonos a Empleados</h2>
+        <div id="contenedorAdelantos" class="space-y-3 mb-3">
+          <!-- Filas de adelantos dinámicas -->
         </div>
-        <div id="gastos-container" class="space-y-2"></div>
+        <button type="button" id="btnAgregarAdelanto" class="bg-gray-700 hover:bg-gray-800 text-white text-sm px-3 py-1.5 rounded transition">+ Agregar Adelanto</button>
       </div>
 
       <!-- Observaciones -->
-      <div class="border-t pt-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
-        <textarea id="observaciones" rows="2" class="w-full border rounded-lg p-2.5" placeholder="Notas adicionales..."></textarea>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Observaciones / Notas de Caja:</label>
+        <textarea id="observaciones" name="observaciones" rows="3" placeholder="Incidencias, diferencias de caja, etc." class="w-full border border-gray-300 rounded p-2"></textarea>
       </div>
 
-      <button type="submit" id="btnSubmit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all">
-        Guardar Cierre de Caja
-      </button>
+      <!-- Botón Registrar -->
+      <div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded transition">Registrar Cierre de Caja</button>
+      </div>
+
     </form>
+
   </div>
 
   <script>
-    let listaEmpleados = [];
+    document.addEventListener("DOMContentLoaded", async () => {
+      let puntosVentaGlobal = [];
+      let empleadosGlobal = [];
 
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('fecha').valueAsDate = new Date();
-      cargarPuntosVenta();
-      cargarEmpleados();
-    });
-
-    async function cargarPuntosVenta() {
+      // 1. Cargar Puntos de Venta
       try {
-        const res = await fetch('/api/puntos-venta');
-        const json = await res.json();
-        const container = document.getElementById('puntos-venta-container');
-        container.innerHTML = '';
-
-        if (json.success && json.data.length > 0) {
-          json.data.forEach((pv, idx) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.innerText = pv.nombre;
-            btn.className = `btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all ${
-              idx === 0 
-                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            }`;
-            
-            btn.onclick = () => {
-              document.querySelectorAll('.btn-pv').forEach(b => {
-                b.className = 'btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all bg-white text-gray-700 border-gray-300 hover:bg-gray-50';
-              });
-              btn.className = 'btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all bg-blue-600 text-white border-blue-600 shadow-sm';
-              document.getElementById('punto_venta').value = pv.nombre;
-            };
-
-            container.appendChild(btn);
-          });
-
-          // Seleccionar primero por defecto
-          document.getElementById('punto_venta').value = json.data[0].nombre;
-        } else {
-          container.innerHTML = '<span class="text-red-500 text-sm">No se encontraron puntos de venta.</span>';
-        }
-      } catch (e) {
-        console.error('Error al cargar puntos de venta:', e);
-      }
-    }
-
-    async function cargarEmpleados() {
-      try {
-        const res = await fetch('/api/empleados');
-        const json = await res.json();
-        if (json.success) {
-          listaEmpleados = json.data;
-        }
-      } catch (e) {
-        console.error('Error al cargar empleados:', e);
-      }
-    }
-
-    function agregarFilaAdelanto() {
-      const container = document.getElementById('adelantos-container');
-      const div = document.createElement('div');
-      div.className = 'flex gap-2 items-center';
-
-      let optionsHtml = '<option value="">-- Seleccionar Empleado --</option>';
-      listaEmpleados.forEach(emp => {
-        optionsHtml += `<option value="${emp.nombre}">${emp.nombre}</option>`;
-      });
-
-      div.innerHTML = `
-        <select class="empleado-nombre border p-2 rounded-lg flex-1 bg-white" required>
-          ${optionsHtml}
-        </select>
-        <input type="number" step="0.01" placeholder="Monto (€)" class="adelanto-monto border p-2 rounded-lg w-32" required />
-        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-2 py-1 hover:bg-red-50 rounded">✕</button>
-      `;
-      container.appendChild(div);
-    }
-
-    function agregarFilaGasto() {
-      const container = document.getElementById('gastos-container');
-      const div = document.createElement('div');
-      div.className = 'flex gap-2 items-center';
-      div.innerHTML = `
-        <input type="text" placeholder="Concepto (ej. Hielo, Transporte)" class="gasto-concepto border p-2 rounded-lg flex-1" required />
-        <input type="number" step="0.01" placeholder="Monto (€)" class="gasto-monto border p-2 rounded-lg w-32" required />
-        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-2 py-1 hover:bg-red-50 rounded">✕</button>
-      `;
-      container.appendChild(div);
-    }
-
-    async function guardarCierre(e) {
-      e.preventDefault();
-      const btn = document.getElementById('btnSubmit');
-      btn.disabled = true;
-      btn.innerText = 'Guardando...';
-
-      const adelantos = Array.from(document.querySelectorAll('#adelantos-container > div')).map(row => ({
-        empleado_nombre: row.querySelector('.empleado-nombre').value,
-        monto: parseFloat(row.querySelector('.adelanto-monto').value)
-      }));
-
-      const gastos = Array.from(document.querySelectorAll('#gastos-container > div')).map(row => ({
-        concepto: row.querySelector('.gasto-concepto').value,
-        monto: parseFloat(row.querySelector('.gasto-monto').value)
-      }));
-
-      const payload = {
-        fecha: document.getElementById('fecha').value,
-        punto_venta: document.getElementById('punto_venta').value,
-        usuario_email: document.getElementById('usuario_email').value,
-        total_efectivo: parseFloat(document.getElementById('total_efectivo').value),
-        total_tarjeta: parseFloat(document.getElementById('total_tarjeta').value),
-        observaciones: document.getElementById('observaciones').value,
-        adelantos,
-        gastos
-      };
-
-      try {
-        const res = await fetch('/api/cierre-caja', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        const resPDV = await fetch("/api/puntos-venta");
+        puntosVentaGlobal = await resPDV.json();
+        
+        const selectPuntoVenta = document.getElementById("punto_venta");
+        puntosVentaGlobal.forEach(pdv => {
+          const opt = document.createElement("option");
+          opt.value = pdv.nombre;
+          opt.textContent = pdv.nombre;
+          selectPuntoVenta.appendChild(opt);
         });
-        const data = await res.json();
+      } catch (err) {
+        console.error("Error cargando puntos de venta:", err);
+      }
 
-        if (data.success) {
-          window.location.href = '/historico.html';
-        } else {
-          alert('Error al guardar: ' + data.error);
-          btn.disabled = false;
-          btn.innerText = 'Guardar Cierre de Caja';
+      // 2. Cargar Lista de Empleados desde /api/usuarios
+      try {
+        const resEmp = await fetch("/api/usuarios");
+        if (resEmp.ok) {
+          empleadosGlobal = await resEmp.json();
         }
       } catch (err) {
-        alert('Error de conexión: ' + err.message);
-        btn.disabled = false;
-        btn.innerText = 'Guardar Cierre de Caja';
+        console.error("Error cargando empleados:", err);
       }
-    }
+
+      // Manejo de Gastos Dinámicos
+      const contenedorGastos = document.getElementById("contenedorGastos");
+      document.getElementById("btnAgregarGasto").addEventListener("click", () => {
+        const div = document.createElement("div");
+        div.className = "flex gap-2 items-center";
+        
+        let opcionesPDV = puntosVentaGlobal.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+
+        div.innerHTML = `
+          <input type="text" placeholder="Concepto del gasto" class="flex-1 border border-gray-300 rounded p-2 text-sm" required>
+          <input type="number" step="0.01" placeholder="Monto €" class="w-28 border border-gray-300 rounded p-2 text-sm" required>
+          <select class="w-40 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- PDV Destino --</option>
+            ${opcionesPDV}
+          </select>
+          <button type="button" class="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 btn-eliminar">✕</button>
+        `;
+        div.querySelector(".btn-eliminar").addEventListener("click", () => div.remove());
+        contenedorGastos.appendChild(div);
+      });
+
+      // Manejo de Adelantos Dinámicos
+      const contenedorAdelantos = document.getElementById("contenedorAdelantos");
+      document.getElementById("btnAgregarAdelanto").addEventListener("click", () => {
+        const div = document.createElement("div");
+        div.className = "flex gap-2 items-center";
+        
+        let opcionesEmpleados = empleadosGlobal.map(e => `<option value="${e.id}">${e.nombre || e.usuario || 'Empleado ' + e.id}</option>`).join('');
+        let opcionesPDV = puntosVentaGlobal.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+
+        div.innerHTML = `
+          <select class="flex-1 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- Selecciona Empleado --</option>
+            ${opcionesEmpleados}
+          </select>
+          <input type="number" step="0.01" placeholder="Monto €" class="w-28 border border-gray-300 rounded p-2 text-sm" required>
+          <select class="w-40 border border-gray-300 rounded p-2 text-sm" required>
+            <option value="">-- PDV Origen --</option>
+            ${opcionesPDV}
+          </select>
+          <button type="button" class="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 btn-eliminar">✕</button>
+        `;
+        div.querySelector(".btn-eliminar").addEventListener("click", () => div.remove());
+        contenedorAdelantos.appendChild(div);
+      });
+
+      // Enviar Formulario
+      document.getElementById("formCierre").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const fechaActual = new Date().toISOString().split('T')[0];
+        const cierreData = {
+          fecha: fechaActual,
+          punto_venta: document.getElementById("punto_venta").value,
+          total_efectivo: parseFloat(document.getElementById("total_efectivo").value) || 0,
+          total_tarjeta: parseFloat(document.getElementById("total_tarjeta").value) || 0,
+          observaciones: document.getElementById("observaciones").value
+        };
+
+        try {
+          const response = await fetch("/api/cierres", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cierreData)
+          });
+
+          if (!response.ok) throw new Error("Error al registrar el cierre");
+
+          alert("¡Cierre registrado con éxito!");
+          window.location.href = "/historico.html";
+        } catch (err) {
+          console.error(err);
+          alert("Hubo un error al guardar el cierre.");
+        }
+      });
+    });
   </script>
 </body>
 </html>
