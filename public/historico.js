@@ -19,7 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const row = document.createElement("tr");
       row.className = "hover:bg-gray-50";
 
-      // Formatear la fecha para que se vea limpia (DD/MM/YYYY)
+      // Formatear la fecha
       let fechaFormateada = c.fecha || '-';
       if (fechaFormateada.includes('T')) {
         const partes = fechaFormateada.split('T')[0].split('-');
@@ -28,12 +28,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
 
+      // Obtener valores numéricos con respaldo para evitar NaN o ceros erróneos
+      const efectivo = parseFloat(c.total_efectivo ?? c.efectivo ?? 0);
+      const tarjeta = parseFloat(c.total_tarjeta ?? c.tarjeta ?? 0);
+      const totalCalculado = (efectivo + tarjeta).toFixed(2);
+
+      // Punto de venta (si viene ID largo, mostrar nombre amigable o el campo disponible)
+      const puntoVenta = c.punto_venta_nombre || c.punto_venta || c.pdv_id || '-';
+
       row.innerHTML = `
         <td class="p-3 font-medium text-gray-900">${fechaFormateada}</td>
-        <td class="p-3 text-gray-700 font-semibold">${c.punto_venta || c.pdv_id || '-'}</td>
-        <td class="p-3 text-gray-700">${c.total_efectivo ?? 0} €</td>
-        <td class="p-3 text-gray-700">${c.total_tarjeta ?? 0} €</td>
-        <td class="p-3 font-semibold text-gray-900">${c.total ?? 0} €</td>
+        <td class="p-3 text-gray-700 font-semibold">${puntoVenta}</td>
+        <td class="p-3 text-gray-700">${efectivo.toFixed(2)} €</td>
+        <td class="p-3 text-gray-700">${tarjeta.toFixed(2)} €</td>
+        <td class="p-3 font-semibold text-gray-900">${totalCalculado} €</td>
         <td class="p-3 text-gray-600 text-xs">
           <div><strong>Obs:</strong> ${c.observaciones || 'Sin incidencias'}</div>
         </td>
