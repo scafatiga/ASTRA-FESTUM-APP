@@ -1,6 +1,12 @@
-const express = require('express');
-const { Pool } = require('pg');
-const path = require('path');
+import express from 'express';
+import pkg from 'pg';
+const { Pool } = pkg;
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
 app.use(express.json());
