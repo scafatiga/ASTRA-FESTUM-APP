@@ -38,6 +38,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnAgregarGasto) btnAgregarGasto.addEventListener('click', agregarGastoFila);
     if (btnAgregarAdelanto) btnAgregarAdelanto.addEventListener('click', agregarAdelantoFila);
 
+    // Añadir una fila inicial por defecto para que los desplegables se vean al abrir la página
+    agregarGastoFila();
+    agregarAdelantoFila();
+
     if (cierreForm) {
         cierreForm.addEventListener('submit', async (e) => {
             e.preventDefault();
