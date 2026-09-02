@@ -52,9 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const desc = g.descripcion || g.concepto || g.desc || 'Gasto';
                     const imp = Number(g.importe || g.monto || g.valor || 0).toFixed(2);
                     const pvGasto = g.punto_venta || g.puntoVenta || '';
-                    const empGasto = g.empleado || '';
-                    const extra = [empGasto, pvGasto].filter(Boolean).join(' - ');
-                    detallesHtml += `<div>- ${desc}: ${imp}€ ${extra ? '('+extra+')' : ''}</div>`;
+                    detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '('+pvGasto+')' : ''}</div>`;
                 });
             }
 
@@ -79,10 +77,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 font-medium text-gray-800">${puntoVenta}</td>
                     <td class="p-3 text-gray-600">${efectivo.toFixed(2)} €</td>
                     <td class="p-3 text-gray-600">${tarjeta.toFixed(2)} €</td>
+                    <td class="p-3 font-semibold text-gray-900">${totalBruto.toFixed(2)} €</td>
                     <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
                     <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
                     <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
-                    <td class="p-3 font-semibold text-gray-900">${totalBruto.toFixed(2)} €</td>
                     <td class="p-3">${detallesHtml}</td>
                 </tr>
             `;
