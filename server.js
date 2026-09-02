@@ -5,12 +5,10 @@ import { createClient } from '@supabase/supabase-js';
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Variables de entorno de Supabase
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -19,16 +17,18 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// Cliente de Supabase configurado globalmente para el esquema astra_festum
+// Inicializar cliente configurado para el esquema 'astra_festum'
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   db: { schema: 'astra_festum' },
+  global: {
+    headers: { 'Accept-Profile': 'astra_festum', 'Content-Profile': 'astra_festum' }
+  },
   auth: {
     persistSession: false,
     autoRefreshToken: false
   }
 });
 
-// Helper para convertir tipos de ID (Integer / null)
 const parseId = (val) => {
   if (val === null || val === undefined || val === '') return null;
   return isNaN(val) ? val : parseInt(val, 10);
@@ -38,7 +38,6 @@ const parseId = (val) => {
 // RUTAS API
 // ==========================================
 
-// 1. Obtener Puntos de Venta
 app.get('/api/puntos-venta', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -54,7 +53,6 @@ app.get('/api/puntos-venta', async (req, res) => {
   }
 });
 
-// 2. Obtener Empleados
 app.get('/api/empleados', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -70,7 +68,6 @@ app.get('/api/empleados', async (req, res) => {
   }
 });
 
-// 3. Obtener Histórico de Cierres
 app.get('/api/cierres', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -86,7 +83,6 @@ app.get('/api/cierres', async (req, res) => {
   }
 });
 
-// 4. Guardar Cierre de Caja
 app.post('/api/cierre', async (req, res) => {
   try {
     const {
@@ -105,8 +101,9 @@ app.post('/api/cierre', async (req, res) => {
 
     const pdvOrigenParsed = parseId(pdv_origen_id);
 
-    // A. Insertar Cierre
+    // 1. Insertar Registro Principal en 'cierres'
     const { data: cierreData, error: cierreError } = await supabase
+      .schema('astra_festum')
       .from('cierres')
       .insert([
         {
@@ -121,13 +118,13 @@ app.post('/api/cierre', async (req, res) => {
       .single();
 
     if (cierreError) {
-      console.error('Error Supabase Cierres:', cierreError);
-      return res.status(500).json({ error: `Error en Cierres: ${cierreError.message}` });
+      console.error('Error al insertar cierre en Supabase:', cierreError);
+      return res.status(500).json({ error: `Cierres: ${cierreError.message} (${cierreError.details || ''})` });
     }
 
     const cierreId = cierreData.id;
 
-    // B. Insertar Gastos
+    // 2. Insertar Gastos opcionales
     if (gastos && Array.isArray(gastos) && gastos.length > 0) {
       const gastosFormateados = gastos.map(g => ({
         cierre_id: cierreId,
@@ -138,16 +135,17 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: gastosError } = await supabase
+        .schema('astra_festum')
         .from('gastos')
         .insert(gastosFormateados);
 
       if (gastosError) {
-        console.error('Error Supabase Gastos:', gastosError);
-        return res.status(500).json({ error: `Error en Gastos: ${gastosError.message}` });
+        console.error('Error al insertar gastos en Supabase:', gastosError);
+        return res.status(500).json({ error: `Gastos: ${gastosError.message} (${gastosError.details || ''})` });
       }
     }
 
-    // C. Insertar Adelantos
+    // 3. Insertar Adelantos opcionales
     if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
       const adelantosFormateados = adelantos.map(a => ({
         cierre_id: cierreId,
@@ -159,29 +157,30 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: adelantosError } = await supabase
+        .schema('astra_festum')
         .from('adelantos')
         .insert(adelantosFormateados);
 
       if (adelantosError) {
-        console.error('Error Supabase Adelantos:', adelantosError);
-        return res.status(500).json({ error: `Error en Adelantos: ${adelantosError.message}` });
+        console.error('Error al insertar adelantos en Supabase:', adelantosError);
+        return res.status(500).json({ error: `Adelantos: ${adelantosError.message} (${adelantosError.details || ''})` });
       }
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Cierre registrado correctamente',
       cierre_id: cierreId
     });
 
   } catch (err) {
-    console.error('Error interno POST /api/cierre:', err);
-    res.status(500).json({ error: err.message || 'Error interno en el servidor' });
+    console.error('Error no controlado en POST /api/cierre:', err);
+    return res.status(500).json({ error: err.message || 'Error interno en el servidor' });
   }
 });
 
 // ==========================================
-// INICIALIZACIÓN ÚNICA DEL SERVIDOR
+// ARRANQUE DEL SERVIDOR
 // ==========================================
 const server = app.listen(port, () => {
   console.log(`Servidor Astra Festum activo en el puerto ${port}`);
@@ -189,7 +188,7 @@ const server = app.listen(port, () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Error: El puerto ${port} está ocupado.`);
+    console.error(`Error: El puerto ${port} ya está ocupado.`);
   } else {
     console.error('Error de servidor:', err);
   }
