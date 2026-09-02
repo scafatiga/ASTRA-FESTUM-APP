@@ -1,0 +1,312 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Astra Festum - Cierre de Caja</title>
+  <style>
+    :root {
+      --bg-color: #f4f6f9;
+      --card-bg: #ffffff;
+      --primary: #1a73e8;
+      --primary-hover: #1557b0;
+      --text: #202124;
+      --border: #dadce0;
+      --danger: #d93025;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    h1, h2 {
+      margin-top: 0;
+      color: var(--text);
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1px 1px;
+      display: flex;
+      gap: 15px;
+    }
+
+    .grid-2 > div {
+      flex: 1;
+    }
+
+    .dinamic-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .dinamic-row input, .dinamic-row select {
+      margin-bottom: 0;
+    }
+
+    .btn {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .btn:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background-color: #5f6368;
+    }
+
+    .btn-danger {
+      background-color: var(--danger);
+      padding: 10px 12px;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+
+    .card-section {
+      border: 1px solid var(--border);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      background-color: #fafafa;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Astra Festum - Cierre de Caja</h1>
+
+  <form id="formCierre">
+    <!-- Seleccion de Punto de Venta Origen -->
+    <div class="form-group">
+      <label for="pdv_origen_id">Punto de Venta Actual (Caja Origen):</label>
+      <select id="pdv_origen_id" required>
+        <option value="">Cargando puntos de venta...</option>
+      </select>
+    </div>
+
+    <!-- Totales -->
+    <div class="grid-2 form-group">
+      <div>
+        <label for="total_efectivo">Total Efectivo (€):</label>
+        <input type="number" id="total_efectivo" step="0.01" min="0" required placeholder="0.00">
+      </div>
+      <div>
+        <label for="total_tarjeta">Total Tarjeta (€):</label>
+        <input type="number" id="total_tarjeta" step="0.01" min="0" required placeholder="0.00">
+      </div>
+    </div>
+
+    <!-- Sección Gastos -->
+    <div class="card-section">
+      <h2>Gastos / Compras Físicas</h2>
+      <div id="contenedorGastos"></div>
+      <button type="button" class="btn btn-secondary" onclick="agregarFilaGasto()">+ Agregar Gasto</button>
+    </div>
+
+    <!-- Sección Adelantos de Empleados -->
+    <div class="card-section">
+      <h2>Adelantos / Abonos a Empleados</h2>
+      <div id="contenedorAdelantos"></div>
+      <button type="button" class="btn btn-secondary" onclick="agregarFilaAdelanto()">+ Agregar Adelanto</button>
+    </div>
+
+    <!-- Observaciones -->
+    <div class="form-group">
+      <label for="observaciones">Observaciones / Notas de Caja:</label>
+      <textarea id="observaciones" rows="3" placeholder="Incidencias, diferencias de caja, etc."></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-submit">Registrar Cierre de Caja</button>
+  </form>
+</div>
+
+<script>
+  let listaPDVs = [];
+  let listaEmpleados = [];
+
+  // Inicializar datos al cargar la página
+  document.addEventListener('DOMContentLoaded', async () => {
+    await cargarPuntosVenta();
+    await cargarEmpleados();
+  });
+
+  async function cargarPuntosVenta() {
+    try {
+      const res = await fetch('/api/puntos-venta');
+      listaPDVs = await res.json();
+      
+      const selectOrigen = document.getElementById('pdv_origen_id');
+      selectOrigen.innerHTML = '<option value="">-- Seleccionar PDV --</option>';
+      
+      listaPDVs.forEach(pdv => {
+        selectOrigen.innerHTML += `<option value="${pdv.id}">${pdv.nombre}</option>`;
+      });
+    } catch (err) {
+      alert('Error al cargar la lista de Puntos de Venta');
+    }
+  }
+
+  async function cargarEmpleados() {
+    try {
+      const res = await fetch('/api/empleados');
+      listaEmpleados = await res.json();
+    } catch (err) {
+      alert('Error al cargar la lista de empleados');
+    }
+  }
+
+  function generarOpcionesPDV(pdvSeleccionadoId = '') {
+    const pdvActualId = document.getElementById('pdv_origen_id').value;
+    return listaPDVs.map(pdv => {
+      const isSelected = (pdvSeleccionadoId && pdv.id == pdvSeleccionadoId) || (!pdvSeleccionadoId && pdv.id == pdvActualId);
+      return `<option value="${pdv.id}" ${isSelected ? 'selected' : ''}>${pdv.nombre}</option>`;
+    }).join('');
+  }
+
+  function generarOpcionesEmpleados() {
+    return `<option value="">-- Empleado --</option>` + listaEmpleados.map(emp => 
+      `<option value="${emp.id}">${emp.nombre} ${emp.apellidos || ''}</option>`
+    ).join('');
+  }
+
+  // --- FILAS DINÁMICAS: GASTOS ---
+  function agregarFilaGasto() {
+    const contenedor = document.getElementById('contenedorGastos');
+    const div = document.createElement('div');
+    div.className = 'dinamic-row fila-gasto';
+    div.innerHTML = `
+      <input type="text" class="input-concepto" placeholder="Concepto del gasto" style="flex: 2;" required>
+      <input type="number" class="input-monto" step="0.01" min="0.01" placeholder="Monto (€)" style="flex: 1;" required>
+      <select class="select-pdv-destino" style="flex: 1.5;" title="PDV al que se le carga el gasto">
+        ${generarOpcionesPDV()}
+      </select>
+      <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">X</button>
+    `;
+    contenedor.appendChild(div);
+  }
+
+  // --- FILAS DINÁMICAS: ADELANTOS ---
+  function agregarFilaAdelanto() {
+    const contenedor = document.getElementById('contenedorAdelantos');
+    const div = document.createElement('div');
+    div.className = 'dinamic-row fila-adelanto';
+    div.innerHTML = `
+      <select class="select-empleado" style="flex: 2;" required>
+        ${generarOpcionesEmpleados()}
+      </select>
+      <input type="number" class="input-monto-adelanto" step="0.01" min="0.01" placeholder="Monto (€)" style="flex: 1;" required>
+      <select class="select-pdv-destino-adelanto" style="flex: 1.5;" title="PDV al que pertenece el gasto/empleado">
+        ${generarOpcionesPDV()}
+      </select>
+      <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">X</button>
+    `;
+    contenedor.appendChild(div);
+  }
+
+  // --- ENVÍO DEL FORMULARIO ---
+  document.getElementById('formCierre').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const pdv_origen_id = parseInt(document.getElementById('pdv_origen_id').value);
+    const total_efectivo = parseFloat(document.getElementById('total_efectivo').value);
+    const total_tarjeta = parseFloat(document.getElementById('total_tarjeta').value);
+    const observaciones = document.getElementById('observaciones').value;
+
+    // Recopilar Gastos
+    const gastos = Array.from(document.querySelectorAll('.fila-gasto')).map(fila => ({
+      concepto: fila.querySelector('.input-concepto').value,
+      monto: parseFloat(fila.querySelector('.input-monto').value),
+      pdv_destino_id: parseInt(fila.querySelector('.select-pdv-destino').value)
+    }));
+
+    // Recopilar Adelantos
+    const adelantos = Array.from(document.querySelectorAll('.fila-adelanto')).map(fila => ({
+      empleado_id: parseInt(fila.querySelector('.select-empleado').value),
+      monto: parseFloat(fila.querySelector('.input-monto-adelanto').value),
+      pdv_destino_id: parseInt(fila.querySelector('.select-pdv-destino-adelanto').value)
+    }));
+
+    const payload = {
+      pdv_origen_id,
+      fecha: new Date().toISOString(),
+      total_efectivo,
+      total_tarjeta,
+      observaciones,
+      gastos,
+      adelantos
+    };
+
+    try {
+      const res = await fetch('/api/cierre', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert('¡Cierre de caja registrado exitosamente!');
+        document.getElementById('formCierre').reset();
+        document.getElementById('contenedorGastos').innerHTML = '';
+        document.getElementById('contenedorAdelantos').innerHTML = '';
+      } else {
+        alert(`Error: ${data.error || 'No se pudo registrar el cierre'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión al enviar el cierre.');
+    }
+  });
+</script>
+
+</body>
+</html>
