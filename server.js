@@ -19,14 +19,13 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// Cliente único de Supabase con opciones auth ajustadas para evitar desfases de reloj
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
     persistSession: false,
     autoRefreshToken: false
   }
 });
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Helper para interactuar exclusivamente con el esquema astra_festum
 const db = supabase.schema('astra_festum');
