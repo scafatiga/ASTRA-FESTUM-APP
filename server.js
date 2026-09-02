@@ -70,9 +70,8 @@ app.patch('/api/puntos-venta/:id/estado', async (req, res) => {
   }
 });
 
-
-
 // --- CIERRES ---
+
 app.get('/api/cierres', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM cierres ORDER BY id DESC');
@@ -98,6 +97,7 @@ app.post('/api/cierres', async (req, res) => {
 });
 
 // --- USUARIOS / EMPLEADOS ---
+
 app.get('/api/usuarios', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
@@ -107,35 +107,13 @@ app.get('/api/usuarios', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/cierres', async (req, res) => {
-  const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
-  try {
-    const { rows } = await pool.query(
-      'INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [fecha, punto_venta, total_efectivo, total_tarjeta, observaciones]
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Error POST /api/cierres:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- USUARIOS Y EMPLEADOS ---
-app.get('/api/usuarios', async (req, res) => {
-  try {
-    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 app.get('/api/empleados', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
     res.json(rows);
   } catch (err) {
+    console.error('Error GET /api/empleados:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
