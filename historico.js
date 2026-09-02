@@ -29,8 +29,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const efectivo = Number(c.total_efectivo ?? c.efectivo ?? c.totalEfectivo ?? 0);
             const tarjeta = Number(c.total_tarjeta ?? c.tarjeta ?? c.totalTarjeta ?? 0);
-            
-            // Si el registro antiguo tiene 'total' pero no bruto calculado, lo usamos como respaldo
             const totalBruto = Number(c.total ?? (efectivo + tarjeta));
 
             const gastos = c.gastos || c.gastosList || c.listaGastos || c.gasto || [];
@@ -45,13 +43,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const cashNeto = efectivo - totalGastos - totalAdelantos;
 
+            // Construcción del desplegable de detalles con empleados y conceptos
             let detallesHtml = '<div class="space-y-1 text-xs">';
+            
             if (Array.isArray(gastos) && gastos.length > 0) {
                 detallesHtml += '<div class="font-semibold text-red-600">Gastos:</div>';
                 gastos.forEach(g => {
                     const desc = g.descripcion || g.concepto || g.desc || 'Gasto';
                     const imp = Number(g.importe || g.monto || g.valor || 0).toFixed(2);
-                    detallesHtml += `<div>- ${desc}: ${imp}€</div>`;
+                    const pvGasto = g.punto_venta || g.puntoVenta || '';
+                    detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '('+pvGasto+')' : ''}</div>`;
                 });
             }
 
@@ -60,11 +61,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 adelantos.forEach(a => {
                     const emp = a.empleado || a.nombre || 'Empleado';
                     const imp = Number(a.importe || a.monto || a.valor || 0).toFixed(2);
-                    detallesHtml += `<div>- ${emp}: ${imp}€</div>`;
+                    const pvAd = a.punto_venta || a.puntoVenta || '';
+                    detallesHtml += `<div>- ${emp}: ${imp}€ ${pvAd ? '('+pvAd+')' : ''}</div>`;
                 });
             }
 
-            if ((!Array.isArray(gastos) || gastos.length === 0) && (!Array.isArray(adelantos) || adelantos.length === 0) && totalGastos === 0 && totalAdelantos === 0) {
+            if ((!Array.isArray(gastos) || gastos.length === 0) && (!Array.isArray(adelantos) || adelantos.length === 0)) {
                 detallesHtml += '<span class="text-gray-400">Sin incidencias</span>';
             }
             detallesHtml += '</div>';
