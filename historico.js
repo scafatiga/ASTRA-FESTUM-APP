@@ -52,7 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const desc = g.descripcion || g.concepto || g.desc || 'Gasto';
                     const imp = Number(g.importe || g.monto || g.valor || 0).toFixed(2);
                     const pvGasto = g.punto_venta || g.puntoVenta || '';
-                    detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '('+pvGasto+')' : ''}</div>`;
+                    const empGasto = g.empleado || '';
+                    const extra = [empGasto, pvGasto].filter(Boolean).join(' - ');
+                    detallesHtml += `<div>- ${desc}: ${imp}€ ${extra ? '('+extra+')' : ''}</div>`;
                 });
             }
 
