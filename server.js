@@ -53,7 +53,7 @@ app.get('/api/empleados', async (req, res) => {
 app.get('/api/cierres', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM cierres ORDER BY id DESC');
-    res.json({ data: rows });
+    res.json(rows);
   } catch (err) {
     console.error('Error GET /api/cierres:', err.message);
     res.status(500).json({ error: err.message });
