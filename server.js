@@ -17,12 +17,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// Inicializar cliente configurado para el esquema 'astra_festum'
+// Cliente con el esquema 'astra_festum' definido en la inicialización
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   db: { schema: 'astra_festum' },
-  global: {
-    headers: { 'Accept-Profile': 'astra_festum', 'Content-Profile': 'astra_festum' }
-  },
   auth: {
     persistSession: false,
     autoRefreshToken: false
@@ -103,7 +100,6 @@ app.post('/api/cierre', async (req, res) => {
 
     // 1. Insertar Registro Principal en 'cierres'
     const { data: cierreData, error: cierreError } = await supabase
-      .schema('astra_festum')
       .from('cierres')
       .insert([
         {
@@ -119,12 +115,12 @@ app.post('/api/cierre', async (req, res) => {
 
     if (cierreError) {
       console.error('Error al insertar cierre en Supabase:', cierreError);
-      return res.status(500).json({ error: `Cierres: ${cierreError.message} (${cierreError.details || ''})` });
+      return res.status(500).json({ error: `Cierres: ${cierreError.message}` });
     }
 
     const cierreId = cierreData.id;
 
-    // 2. Insertar Gastos opcionales
+    // 2. Insertar Gastos
     if (gastos && Array.isArray(gastos) && gastos.length > 0) {
       const gastosFormateados = gastos.map(g => ({
         cierre_id: cierreId,
@@ -135,17 +131,16 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: gastosError } = await supabase
-        .schema('astra_festum')
         .from('gastos')
         .insert(gastosFormateados);
 
       if (gastosError) {
         console.error('Error al insertar gastos en Supabase:', gastosError);
-        return res.status(500).json({ error: `Gastos: ${gastosError.message} (${gastosError.details || ''})` });
+        return res.status(500).json({ error: `Gastos: ${gastosError.message}` });
       }
     }
 
-    // 3. Insertar Adelantos opcionales
+    // 3. Insertar Adelantos
     if (adelantos && Array.isArray(adelantos) && adelantos.length > 0) {
       const adelantosFormateados = adelantos.map(a => ({
         cierre_id: cierreId,
@@ -157,13 +152,12 @@ app.post('/api/cierre', async (req, res) => {
       }));
 
       const { error: adelantosError } = await supabase
-        .schema('astra_festum')
         .from('adelantos')
         .insert(adelantosFormateados);
 
       if (adelantosError) {
         console.error('Error al insertar adelantos en Supabase:', adelantosError);
-        return res.status(500).json({ error: `Adelantos: ${adelantosError.message} (${adelantosError.details || ''})` });
+        return res.status(500).json({ error: `Adelantos: ${adelantosError.message}` });
       }
     }
 
