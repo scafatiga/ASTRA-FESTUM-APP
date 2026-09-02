@@ -6,105 +6,182 @@
   <title>Cierre de Caja - Astra Festum</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-  <div class="bg-white p-8 rounded-lg shadow-md max-w-xl w-full">
-    
-    <!-- Header con navegacion limpia -->
-    <div class="flex justify-between items-center mb-6 pb-4 border-b">
-      <a href="/" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm font-medium transition">
-        Menu Principal
-      </a>
-      <h1 class="text-xl font-bold text-gray-800">Cierre de Caja</h1>
-      <a href="/historico.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-sm font-medium transition">
-        Ver Historico
-      </a>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 md:p-8">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Nuevo Cierre de Caja</h1>
+      <a href="/historico.html" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Ver Histórico</a>
     </div>
 
-    <form id="cierreForm" class="space-y-4">
-      <div class="grid grid-cols-2 gap-4">
+    <form id="cierreForm" onsubmit="guardarCierre(event)" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-          <input type="date" id="fecha" required class="w-full border rounded p-2 text-sm">
+          <input type="date" id="fecha" required class="w-full border rounded-lg p-2.5 bg-gray-50">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Punto de Venta</label>
-          <select id="punto_venta" required class="w-full border rounded p-2 text-sm">
-            <option value="">Seleccionar...</option>
-            <option value="Astra Festum Principal">Astra Festum Principal</option>
-            <option value="Barra Secundaria">Barra Secundaria</option>
-          </select>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Usuario Email</label>
+          <input type="email" id="usuario_email" value="admin@astrafestum.com" required class="w-full border rounded-lg p-2.5 bg-gray-50">
         </div>
       </div>
 
+      <!-- Selección de Punto de Venta por Botones -->
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Email Responsable</label>
-        <input type="email" id="usuario_email" required placeholder="usuario@astrafestum.com" class="w-full border rounded p-2 text-sm">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Punto de Venta</label>
+        <div id="puntos-venta-container" class="flex flex-wrap gap-2">
+          <span class="text-gray-400 text-sm">Cargando puntos de venta...</span>
+        </div>
+        <input type="hidden" id="punto_venta" name="punto_venta" required />
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
+      <!-- Totales -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (EUR)</label>
-          <input type="number" step="0.01" id="total_efectivo" required placeholder="0.00" class="w-full border rounded p-2 text-sm">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Efectivo (€)</label>
+          <input type="number" step="0.01" id="total_efectivo" placeholder="0.00" required class="w-full border rounded-lg p-2.5 text-lg font-semibold">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (EUR)</label>
-          <input type="number" step="0.01" id="total_tarjeta" required placeholder="0.00" class="w-full border rounded p-2 text-sm">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Total Tarjeta (€)</label>
+          <input type="number" step="0.01" id="total_tarjeta" placeholder="0.00" required class="w-full border rounded-lg p-2.5 text-lg font-semibold">
         </div>
       </div>
 
-      <!-- Section: Adelantos -->
-      <div class="border p-4 rounded bg-gray-50">
-        <label class="block text-sm font-semibold text-gray-700 mb-2">Adelantos a Empleados</label>
-        <div id="adelantosContainer" class="space-y-2 mb-2"></div>
-        <button type="button" onclick="addAdelanto()" class="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium">+ Agregar Adelanto</button>
+      <!-- Adelantos a Empleados -->
+      <div class="border-t pt-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-semibold text-gray-700">Adelantos a Empleados</h2>
+          <button type="button" onclick="agregarFilaAdelanto()" class="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-200">+ Añadir Adelanto</button>
+        </div>
+        <div id="adelantos-container" class="space-y-2"></div>
       </div>
 
-      <!-- Section: Gastos -->
-      <div class="border p-4 rounded bg-gray-50">
-        <label class="block text-sm font-semibold text-gray-700 mb-2">Gastos de Caja</label>
-        <div id="gastosContainer" class="space-y-2 mb-2"></div>
-        <button type="button" onclick="addGasto()" class="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium">+ Agregar Gasto</button>
+      <!-- Gastos de Caja -->
+      <div class="border-t pt-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-semibold text-gray-700">Gastos Pagados con Caja</h2>
+          <button type="button" onclick="agregarFilaGasto()" class="bg-orange-100 text-orange-700 px-3 py-1 rounded-lg text-sm font-medium hover:bg-orange-200">+ Añadir Gasto</button>
+        </div>
+        <div id="gastos-container" class="space-y-2"></div>
       </div>
 
-      <div>
+      <!-- Observaciones -->
+      <div class="border-t pt-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
-        <textarea id="observaciones" rows="3" placeholder="Incidencias, diferencias de caja, etc." class="w-full border rounded p-2 text-sm"></textarea>
+        <textarea id="observaciones" rows="2" class="w-full border rounded-lg p-2.5" placeholder="Notas adicionales..."></textarea>
       </div>
 
-      <button type="submit" class="w-full bg-gray-900 hover:bg-black text-white font-medium py-2.5 rounded transition">
+      <button type="submit" id="btnSubmit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all">
         Guardar Cierre de Caja
       </button>
     </form>
   </div>
 
   <script>
-    function addAdelanto() {
-      const container = document.getElementById('adelantosContainer');
+    let listaEmpleados = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fecha').valueAsDate = new Date();
+      cargarPuntosVenta();
+      cargarEmpleados();
+    });
+
+    async function cargarPuntosVenta() {
+      try {
+        const res = await fetch('/api/puntos-venta');
+        const json = await res.json();
+        const container = document.getElementById('puntos-venta-container');
+        container.innerHTML = '';
+
+        if (json.success && json.data.length > 0) {
+          json.data.forEach((pv, idx) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.innerText = pv.nombre;
+            btn.className = `btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all ${
+              idx === 0 
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`;
+            
+            btn.onclick = () => {
+              document.querySelectorAll('.btn-pv').forEach(b => {
+                b.className = 'btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all bg-white text-gray-700 border-gray-300 hover:bg-gray-50';
+              });
+              btn.className = 'btn-pv px-4 py-2 rounded-lg border font-semibold text-sm transition-all bg-blue-600 text-white border-blue-600 shadow-sm';
+              document.getElementById('punto_venta').value = pv.nombre;
+            };
+
+            container.appendChild(btn);
+          });
+
+          // Seleccionar primero por defecto
+          document.getElementById('punto_venta').value = json.data[0].nombre;
+        } else {
+          container.innerHTML = '<span class="text-red-500 text-sm">No se encontraron puntos de venta.</span>';
+        }
+      } catch (e) {
+        console.error('Error al cargar puntos de venta:', e);
+      }
+    }
+
+    async function cargarEmpleados() {
+      try {
+        const res = await fetch('/api/empleados');
+        const json = await res.json();
+        if (json.success) {
+          listaEmpleados = json.data;
+        }
+      } catch (e) {
+        console.error('Error al cargar empleados:', e);
+      }
+    }
+
+    function agregarFilaAdelanto() {
+      const container = document.getElementById('adelantos-container');
       const div = document.createElement('div');
       div.className = 'flex gap-2 items-center';
-      div.innerHTML = '<input type="text" placeholder="Nombre empleado" class="empleado-nombre border rounded p-1.5 text-xs flex-1" required><input type="number" step="0.01" placeholder="Importe (EUR)" class="empleado-importe border rounded p-1.5 text-xs w-28" required><button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">X</button>';
+
+      let optionsHtml = '<option value="">-- Seleccionar Empleado --</option>';
+      listaEmpleados.forEach(emp => {
+        optionsHtml += `<option value="${emp.nombre}">${emp.nombre}</option>`;
+      });
+
+      div.innerHTML = `
+        <select class="empleado-nombre border p-2 rounded-lg flex-1 bg-white" required>
+          ${optionsHtml}
+        </select>
+        <input type="number" step="0.01" placeholder="Monto (€)" class="adelanto-monto border p-2 rounded-lg w-32" required />
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-2 py-1 hover:bg-red-50 rounded">✕</button>
+      `;
       container.appendChild(div);
     }
 
-    function addGasto() {
-      const container = document.getElementById('gastosContainer');
+    function agregarFilaGasto() {
+      const container = document.getElementById('gastos-container');
       const div = document.createElement('div');
       div.className = 'flex gap-2 items-center';
-      div.innerHTML = '<input type="text" placeholder="Concepto del gasto" class="gasto-concepto border rounded p-1.5 text-xs flex-1" required><input type="number" step="0.01" placeholder="Importe (EUR)" class="gasto-importe border rounded p-1.5 text-xs w-28" required><button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-1">X</button>';
+      div.innerHTML = `
+        <input type="text" placeholder="Concepto (ej. Hielo, Transporte)" class="gasto-concepto border p-2 rounded-lg flex-1" required />
+        <input type="number" step="0.01" placeholder="Monto (€)" class="gasto-monto border p-2 rounded-lg w-32" required />
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 font-bold px-2 py-1 hover:bg-red-50 rounded">✕</button>
+      `;
       container.appendChild(div);
     }
 
-    document.getElementById('cierreForm').addEventListener('submit', async (e) => {
+    async function guardarCierre(e) {
       e.preventDefault();
-      
-      const adelantos = Array.from(document.querySelectorAll('#adelantosContainer > div')).map(div => ({
-        empleado_nombre: div.querySelector('.empleado-nombre').value,
-        monto: parseFloat(div.querySelector('.empleado-importe').value)
+      const btn = document.getElementById('btnSubmit');
+      btn.disabled = true;
+      btn.innerText = 'Guardando...';
+
+      const adelantos = Array.from(document.querySelectorAll('#adelantos-container > div')).map(row => ({
+        empleado_nombre: row.querySelector('.empleado-nombre').value,
+        monto: parseFloat(row.querySelector('.adelanto-monto').value)
       }));
 
-      const gastos = Array.from(document.querySelectorAll('#gastosContainer > div')).map(div => ({
-        concepto: div.querySelector('.gasto-concepto').value,
-        monto: parseFloat(div.querySelector('.gasto-importe').value)
+      const gastos = Array.from(document.querySelectorAll('#gastos-container > div')).map(row => ({
+        concepto: row.querySelector('.gasto-concepto').value,
+        monto: parseFloat(row.querySelector('.gasto-monto').value)
       }));
 
       const payload = {
@@ -125,16 +202,20 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
+
         if (data.success) {
-          alert('Cierre de caja guardado con éxito.');
           window.location.href = '/historico.html';
         } else {
           alert('Error al guardar: ' + data.error);
+          btn.disabled = false;
+          btn.innerText = 'Guardar Cierre de Caja';
         }
       } catch (err) {
-        alert('Error de conexión con el servidor.');
+        alert('Error de conexión: ' + err.message);
+        btn.disabled = false;
+        btn.innerText = 'Guardar Cierre de Caja';
       }
-    });
+    }
   </script>
 </body>
 </html>
