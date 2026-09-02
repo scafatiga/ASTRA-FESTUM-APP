@@ -82,15 +82,16 @@ app.get('/api/cierres', async (req, res) => {
   }
 });
 
+// --- USUARIOS / EMPLEADOS ---
 app.get('/api/usuarios', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
     res.json(rows);
   } catch (err) {
+    console.error('Error GET /api/usuarios:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/cierres', async (req, res) => {
   const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
   try {
