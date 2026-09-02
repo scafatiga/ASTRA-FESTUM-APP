@@ -15,7 +15,7 @@
     </div>
 
     <form id="formCierre" class="space-y-6">
-      <!-- Datos Principales -->
+      <!-- Fecha y Usuario -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Fecha</label>
@@ -72,7 +72,7 @@
         <textarea id="observaciones" rows="3" placeholder="Notas adicionales..." class="w-full bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg p-2.5"></textarea>
       </div>
 
-      <!-- Botón Enviar -->
+      <!-- Botón Guardar -->
       <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow transition duration-200">Guardar Cierre de Caja</button>
     </form>
   </div>
@@ -81,10 +81,8 @@
     let listaPDVs = [];
     let listaEmpleados = [];
 
-    // Inicializar fecha de hoy
     document.getElementById('fecha').valueAsDate = new Date();
 
-    // Cargar datos iniciales desde el Backend Node.js
     async function cargarCatalogos() {
       try {
         const [resPDVs, resEmp] = await Promise.all([
@@ -120,7 +118,6 @@
       select.innerHTML = '<option value="">-- Seleccionar PDV --</option>';
       
       listaPDVs.forEach(pdv => {
-        // Soporta cualquier variación de nombre de campo en Supabase
         const nombreDisplay = pdv.nombre || pdv.denominacion || pdv.nombre_pdv || `PDV #${pdv.id}`;
         select.innerHTML += `<option value="${pdv.id}">${nombreDisplay}</option>`;
       });
@@ -136,7 +133,7 @@
         empOptions += `<option value="${e.id}">${nombreEmp}</option>`;
       });
 
-      let pdvOptions = '<option value="">-- Imputar a PDV (Opcional) --</option>';
+      let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
       listaPDVs.forEach(p => {
         const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
         pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
@@ -159,7 +156,7 @@
       const cont = document.getElementById('contenedor_gastos');
       const id = Date.now();
 
-      let pdvOptions = '<option value="">-- Imputar a PDV (Opcional) --</option>';
+      let pdvOptions = '<option value="">-- Imputar a PDV --</option>';
       listaPDVs.forEach(p => {
         const nombrePdv = p.nombre || p.denominacion || `PDV #${p.id}`;
         pdvOptions += `<option value="${p.id}">${nombrePdv}</option>`;
@@ -178,7 +175,6 @@
       cont.insertAdjacentHTML('beforeend', html);
     }
 
-    // Enviar Formulario
     document.getElementById('formCierre').addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -188,14 +184,12 @@
       const total_tarjeta = parseFloat(document.getElementById('total_tarjeta').value) || 0;
       const observaciones = document.getElementById('observaciones').value;
 
-      // Recopilar Adelantos
       const adelantos = Array.from(document.querySelectorAll('#contenedor_adelantos > div')).map(div => ({
         empleado_id: div.querySelector('.emp_id').value,
         pdv_destino_id: div.querySelector('.pdv_dest_id').value || pdv_origen_id,
         monto: parseFloat(div.querySelector('.monto').value) || 0
       }));
 
-      // Recopilar Gastos
       const gastos = Array.from(document.querySelectorAll('#contenedor_gastos > div')).map(div => ({
         concepto: div.querySelector('.concepto').value,
         pdv_destino_id: div.querySelector('.pdv_dest_id').value || pdv_origen_id,
@@ -217,11 +211,10 @@
         alert('¡Cierre de caja guardado con éxito!');
         window.location.reload();
       } catch (err) {
-        alert(`Error: ${err.message}`);
+        alert(`Error al guardar: ${err.message}`);
       }
     });
 
-    // Iniciar
     cargarCatalogos();
   </script>
 </body>
