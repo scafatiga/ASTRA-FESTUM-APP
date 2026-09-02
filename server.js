@@ -70,14 +70,29 @@ app.patch('/api/puntos-venta/:id/estado', async (req, res) => {
   }
 });
 
-// --- CIERRES ---
 
+
+// --- CIERRES ---
 app.get('/api/cierres', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM cierres ORDER BY id DESC');
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/cierres:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cierres', async (req, res) => {
+  const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [fecha, punto_venta, total_efectivo, total_tarjeta, observaciones]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/cierres:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
