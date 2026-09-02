@@ -106,5 +106,24 @@ app.post('/api/cierres', async (req, res) => {
   }
 });
 
+// --- USUARIOS Y EMPLEADOS ---
+app.get('/api/usuarios', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/empleados', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
