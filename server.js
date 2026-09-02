@@ -29,13 +29,19 @@ app.post('/api/cierre-caja', async (req, res) => {
 
     if (adelantos && adelantos.length > 0) {
       const adelantosFormatted = adelantos.map(a => ({ ...a, venta_id: venta.id }));
-      const { error: adErr } = await supabase.schema('astra_festum').from('adelantos_empleados').insert(adelantosFormatted);
+      const { error: adErr } = await supabase
+        .schema('astra_festum')
+        .from('adelantos_empleados')
+        .insert(adelantosFormatted);
       if (adErr) throw adErr;
     }
 
     if (gastos && gastos.length > 0) {
       const gastosFormatted = gastos.map(g => ({ ...g, venta_id: venta.id }));
-      const { error: gErr } = await supabase.schema('astra_festum').from('gastos_caja').insert(gastosFormatted);
+      const { error: gErr } = await supabase
+        .schema('astra_festum')
+        .from('gastos_caja')
+        .insert(gastosFormatted);
       if (gErr) throw gErr;
     }
 
@@ -46,17 +52,38 @@ app.post('/api/cierre-caja', async (req, res) => {
   }
 });
 
-// Obtener Histórico de Cierres
+// Obtener Histórico de Cierres (Sin joins complejos)
 app.get('/api/cierres', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data: ventas, error: vErr } = await supabase
       .schema('astra_festum')
       .from('ventas_diarias')
-      .select('*, adelantos_empleados(*), gastos_caja(*)')
+      .select('*')
       .order('fecha', { ascending: false });
 
-    if (error) throw error;
-    res.json({ success: true, data });
+    if (vErr) throw vErr;
+
+    const { data: adelantos, error: aErr } = await supabase
+      .schema('astra_festum')
+      .from('adelantos_empleados')
+      .select('*');
+
+    if (aErr) throw aErr;
+
+    const { data: gastos, error: gErr } = await supabase
+      .schema('astra_festum')
+      .from('gastos_caja')
+      .select('*');
+
+    if (gErr) throw gErr;
+
+    const result = ventas.map(v => ({
+      ...v,
+      adelantos_empleados: (adelantos || []).filter(a => a.venta_id === v.id),
+      gastos_caja: (gastos || []).filter(g => g.venta_id === v.id)
+    }));
+
+    res.json({ success: true, data: result });
   } catch (err) {
     console.error('Error al obtener cierres:', err.message);
     res.status(500).json({ success: false, error: err.message });
