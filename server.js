@@ -172,19 +172,28 @@ app.get('/api/personal', async (req, res) => {
   }
 });
 
-// Sirve el archivo de la Foto DNI guardado en la base de datos
+// Sirve el archivo de la Foto DNI guardado en la base de datos.
+// Con ?download=1 fuerza la descarga en vez de abrirlo en el navegador.
 app.get('/api/personal/:id/foto-dni', async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      'SELECT foto_dni_data, foto_dni_mime FROM empleados WHERE id = $1',
+      'SELECT foto_dni_data, foto_dni_mime, foto_dni_nombre_original FROM empleados WHERE id = $1',
       [id]
     );
     if (!rows[0] || !rows[0].foto_dni_data) {
       return res.status(404).send('No hay foto de DNI para este empleado');
     }
-    res.set('Content-Type', rows[0].foto_dni_mime || 'application/octet-stream');
-    res.send(rows[0].foto_dni_data);
+
+    const { foto_dni_data, foto_dni_mime, foto_dni_nombre_original } = rows[0];
+    res.set('Content-Type', foto_dni_mime || 'application/octet-stream');
+
+    if (req.query.download) {
+      const nombreArchivo = foto_dni_nombre_original || `foto-dni-${id}`;
+      res.set('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    }
+
+    res.send(foto_dni_data);
   } catch (err) {
     console.error('Error GET /api/personal/:id/foto-dni:', err.message);
     res.status(500).json({ error: err.message });
@@ -215,15 +224,16 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
 
   const fotoDniData = req.file ? req.file.buffer : null;
   const fotoDniMime = req.file ? req.file.mimetype : null;
+  const fotoDniNombreOriginal = req.file ? req.file.originalname : null;
 
   try {
     const { rows } = await pool.query(
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
          iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
-         email, foto_dni_data, foto_dni_mime, estado)
+         email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, estado)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, TRUE))
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17, TRUE))
        RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
         usuario_id || null,
@@ -241,6 +251,7 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
         email || null,
         fotoDniData,
         fotoDniMime,
+        fotoDniNombreOriginal,
         estado
       ]
     );

@@ -53,7 +53,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-600">${formatearFecha(e.fecha_out)}</td>
                     <td class="p-3">
                         ${e.tiene_foto_dni
-                            ? `<a href="/api/personal/${e.id}/foto-dni" target="_blank" class="text-blue-600 hover:underline text-xs">Ver archivo</a>`
+                            ? `<a href="/api/personal/${e.id}/foto-dni" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
+                               <span class="text-gray-300">|</span>
+                               <a href="/api/personal/${e.id}/foto-dni?download=1" class="text-blue-600 hover:underline text-xs">Descargar</a>`
                             : '<span class="text-gray-400 text-xs">-</span>'}
                     </td>
                     <td class="p-3">
