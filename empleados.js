@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             formData.append('horas_alta', document.getElementById('horasAlta').value || '');
             formData.append('punto_venta_id', document.getElementById('puntoVenta').value || '');
             formData.append('email', document.getElementById('email').value.trim());
+            formData.append('enviarGestoria', document.getElementById('enviarGestoria').checked);
 
             const archivoFotoDni = document.getElementById('fotoDni').files[0];
             if (archivoFotoDni) {
@@ -129,6 +130,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Sin header Content-Type: el navegador lo pone solo (multipart + boundary)
                 });
                 if (!res.ok) throw new Error('Error al crear empleado');
+
+                const resultado = await res.json();
+                if (document.getElementById('enviarGestoria').checked) {
+                    if (resultado.gestoria_enviada) {
+                        alert('Empleado creado y email enviado a la Gestoría.');
+                    } else {
+                        alert('Empleado creado, pero el email a la Gestoría NO se pudo enviar: ' + (resultado.gestoria_error || 'error desconocido'));
+                    }
+                }
 
                 form.reset();
                 cargarEmpleados();

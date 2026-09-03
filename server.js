@@ -6,6 +6,7 @@ const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -22,6 +23,74 @@ app.use(express.static(path.join(__dirname)));
 // Multer en memoria: el archivo se guarda directo en la base de datos (columna BYTEA),
 // no se escribe nunca en el disco de Render.
 const upload = multer({ storage: multer.memoryStorage() });
+
+// --- Envío de email a la Gestoría (checkbox en Alta de Empleado) ---
+
+let mailTransporter = null;
+
+function getMailTransporter() {
+  if (mailTransporter) return mailTransporter;
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    throw new Error('Faltan las variables de entorno GMAIL_USER o GMAIL_APP_PASSWORD');
+  }
+  mailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass }
+  });
+  return mailTransporter;
+}
+
+function formatearFechaEmail(f) {
+  if (!f) return '-';
+  const d = new Date(f);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('es-ES');
+}
+
+async function enviarEmailGestoria(empleado, puntoVenta, archivo) {
+  const transporter = getMailTransporter();
+  const destinatario = process.env.GESTORIA_EMAIL || 'gabrielscafati@yahoo.com';
+
+  const cuerpo = `Hola, por favor tramitar alta en ASTRA FESTUM:
+
+DATOS PERSONALES:
+Nombre: ${empleado.nombre || '-'}
+DNI: ${empleado.dni || '-'}
+Nº Seguridad Social: ${empleado.numero_seguridad_social || '-'}
+Nacionalidad: ${empleado.nacionalidad || '-'}
+Domicilio: ${empleado.domicilio || '-'}
+
+DATOS CONTRACTUALES:
+Punto de Venta: ${(puntoVenta && puntoVenta.nombre) || '-'}
+Dirección: ${(puntoVenta && puntoVenta.direccion) || '-'}
+Fecha de Inicio: ${formatearFechaEmail(empleado.fecha_in)}
+Fecha Fin: ${formatearFechaEmail(empleado.fecha_out)}
+Jornada: ${empleado.horas_alta || '-'}
+
+Un saludo y gracias.
+Gabriel Scafati
++34610261627
+`;
+
+  const opciones = {
+    from: process.env.GMAIL_USER,
+    to: destinatario,
+    subject: `Alta en ASTRA FESTUM - ${empleado.nombre}`,
+    text: cuerpo
+  };
+
+  if (archivo && archivo.buffer) {
+    opciones.attachments = [{
+      filename: archivo.originalname || 'foto-dni',
+      content: archivo.buffer,
+      contentType: archivo.mimetype
+    }];
+  }
+
+  await transporter.sendMail(opciones);
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -215,7 +284,8 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
     horas_alta,
     punto_venta_id,
     email,
-    estado
+    estado,
+    enviarGestoria
   } = req.body;
 
   if (!nombre) {
@@ -255,7 +325,35 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
         estado
       ]
     );
-    res.json(rows[0]);
+    const empleadoCreado = rows[0];
+
+    // Si se marcó el checkbox, enviamos el email a la Gestoría (no bloquea la respuesta si falla)
+    let gestoriaEnviada = false;
+    let gestoriaError = null;
+    if (enviarGestoria === 'true') {
+      try {
+        let puntoVenta = null;
+        if (punto_venta_id) {
+          const pv = await pool.query('SELECT nombre, direccion FROM puntos_venta WHERE id = $1', [punto_venta_id]);
+          puntoVenta = pv.rows[0] || null;
+        }
+
+        await enviarEmailGestoria(
+          {
+            nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
+            iban, domicilio, fecha_in, fecha_out, horas_alta, email
+          },
+          puntoVenta,
+          req.file
+        );
+        gestoriaEnviada = true;
+      } catch (mailErr) {
+        console.error('Error enviando email a la Gestoría:', mailErr.message);
+        gestoriaError = mailErr.message;
+      }
+    }
+
+    res.json({ ...empleadoCreado, gestoria_enviada: gestoriaEnviada, gestoria_error: gestoriaError });
   } catch (err) {
     console.error('Error POST /api/personal:', err.message);
     res.status(500).json({ error: err.message });
