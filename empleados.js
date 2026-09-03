@@ -309,20 +309,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Cargar lista de empleados ---
+    let empleadosCache = [];
+
+    document.getElementById('buscadorEmpleados').addEventListener('input', (e) => {
+        renderizarTablaEmpleados(filtrarEmpleados(e.target.value));
+    });
+
+    function filtrarEmpleados(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return empleadosCache;
+        return empleadosCache.filter(e => {
+            const campos = [e.nombre, e.dni, e.email, nombrePuntoVenta(e.punto_venta_id)];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     async function cargarEmpleados() {
         try {
             const res = await fetch('/api/personal');
             if (!res.ok) throw new Error('Error al cargar empleados');
-            const datos = await res.json();
+            empleadosCache = await res.json();
 
-            document.getElementById('contadorEmpleados').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorEmpleados').textContent = empleadosCache ? empleadosCache.length : 0;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay empleados registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorEmpleados').value;
+            renderizarTablaEmpleados(filtrarEmpleados(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(e => `
+    function renderizarTablaEmpleados(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay empleados que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(e => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 font-medium text-gray-800">${e.nombre || ''}</td>
                     <td class="p-3 text-gray-600">${e.dni || '-'}</td>
@@ -353,28 +377,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.accionSelect').forEach(sel => {
-                sel.addEventListener('change', async () => {
-                    const id = sel.dataset.id;
-                    const accion = sel.value;
-                    sel.value = ''; // vuelve al placeholder tras ejecutar
+        document.querySelectorAll('.accionSelect').forEach(sel => {
+            sel.addEventListener('change', async () => {
+                const id = sel.dataset.id;
+                const accion = sel.value;
+                sel.value = ''; // vuelve al placeholder tras ejecutar
 
-                    if (accion === 'estado') {
-                        await cambiarEstadoEmpleado(id, sel.dataset.estado === 'true');
-                    } else if (accion === 'detalle') {
-                        await abrirDetalle(id);
-                    } else if (accion === 'editar') {
-                        await abrirEditar(id);
-                    } else if (accion === 'eliminar') {
-                        await eliminarEmpleado(id);
-                    }
-                });
+                if (accion === 'estado') {
+                    await cambiarEstadoEmpleado(id, sel.dataset.estado === 'true');
+                } else if (accion === 'detalle') {
+                    await abrirDetalle(id);
+                } else if (accion === 'editar') {
+                    await abrirEditar(id);
+                } else if (accion === 'eliminar') {
+                    await eliminarEmpleado(id);
+                }
             });
-
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
-        }
+        });
     }
 
     // --- Envío del formulario ---

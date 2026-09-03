@@ -538,5 +538,63 @@ app.patch('/api/proveedores/:id/estado', async (req, res) => {
   }
 });
 
+// Obtener un proveedor (para Detalle/Editar)
+app.get('/api/proveedores/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM proveedores WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Proveedor no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/proveedores/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editar un proveedor
+app.put('/api/proveedores/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    nombre_proveedor, nombre_comercial, cif, iban,
+    forma_pago, ciudad, direccion_fiscal, telefono, email
+  } = req.body;
+
+  if (!nombre_proveedor) {
+    return res.status(400).json({ error: 'Falta el nombre del proveedor' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE proveedores SET
+         nombre_proveedor=$1, nombre_comercial=$2, cif=$3, iban=$4,
+         forma_pago=$5, ciudad=$6, direccion_fiscal=$7, telefono=$8, email=$9
+       WHERE id=$10
+       RETURNING *`,
+      [
+        nombre_proveedor, nombre_comercial || null, cif || null, iban || null,
+        forma_pago || null, ciudad || null, direccion_fiscal || null,
+        telefono || null, email || null, id
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Proveedor no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/proveedores/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Eliminar un proveedor
+app.delete('/api/proveedores/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM proveedores WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/proveedores/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));

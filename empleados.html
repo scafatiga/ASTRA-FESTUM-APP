@@ -113,7 +113,9 @@
                 <polyline points="6 9 12 15 18 9"/>
             </svg>
         </button>
-        <div id="listaEmpleadosWrapper" class="hidden overflow-x-auto mt-3">
+        <div id="listaEmpleadosWrapper" class="hidden mt-3">
+            <input type="text" id="buscadorEmpleados" placeholder="Buscar empleado por nombre, DNI, punto de venta..." class="w-full border p-2 rounded mb-3 focus:ring-2 focus:ring-blue-500">
+            <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
@@ -131,6 +133,7 @@
                     <tr><td colspan="8" class="p-4 text-center text-gray-500">Cargando...</td></tr>
                 </tbody>
             </table>
+            </div>
         </div>
 
     </div>

@@ -7,15 +7,15 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/nav.css">
 </head>
-<body class="bg-gray-100 p-6 min-h-screen">
-    <div class="max-w-5xl mx-auto bg-white p-6 rounded-lg shadow-md">
+<body class="bg-gray-100 min-h-screen">
+    <div class="max-w-5xl mx-auto bg-white p-6 rounded-lg shadow-md m-6">
 
         <div class="flex justify-between items-center mb-6 pb-4 border-b">
             <h1 class="text-2xl font-bold text-gray-800">Proveedores</h1>
         </div>
 
         <!-- Formulario de alta -->
-        <form id="formProveedor" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 border-b pb-6">
+        <form id="formProveedor" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 border-b pb-6" novalidate>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Nombre Proveedor:</label>
                 <input type="text" id="nombreProveedor" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
@@ -26,11 +26,13 @@
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">CIF:</label>
-                <input type="text" id="cif" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                <input type="text" id="cif" placeholder="B12345678, 12345678A ó X1234567L" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                <p id="cifError" class="text-xs text-red-600 mt-1 hidden">CIF/NIF no válido. Formatos aceptados: letra+8 dígitos, 8 dígitos+letra, o letra+7 dígitos+letra.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">IBAN:</label>
-                <input type="text" id="iban" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                <input type="text" id="iban" placeholder="ES00 0000 0000 0000 0000 0000" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                <p id="ibanError" class="text-xs text-red-600 mt-1 hidden">El IBAN no es válido.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Forma de Pago:</label>
@@ -46,7 +48,7 @@
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono:</label>
-                <input type="text" id="telefono" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                <input type="text" id="telefono" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Email:</label>
@@ -59,27 +61,103 @@
             </div>
         </form>
 
-        <!-- Lista -->
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
-                        <th class="p-3">Nombre</th>
-                        <th class="p-3">N. Comercial</th>
-                        <th class="p-3">CIF</th>
-                        <th class="p-3">Ciudad</th>
-                        <th class="p-3">Teléfono</th>
-                        <th class="p-3">Email</th>
-                        <th class="p-3">Estado</th>
-                        <th class="p-3">Acción</th>
-                    </tr>
-                </thead>
-                <tbody id="tablaProveedores" class="divide-y text-sm">
-                    <tr><td colspan="8" class="p-4 text-center text-gray-500">Cargando...</td></tr>
-                </tbody>
-            </table>
+        <!-- Lista (colapsada por defecto) -->
+        <button id="btnToggleLista" type="button" class="w-full flex items-center justify-between bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium px-4 py-3 rounded-lg transition">
+            <span>Ver Listado de Proveedores (<span id="contadorProveedores">0</span>)</span>
+            <svg id="iconoToggleLista" class="w-5 h-5 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
+        </button>
+        <div id="listaProveedoresWrapper" class="hidden mt-3">
+            <input type="text" id="buscadorProveedores" placeholder="Buscar proveedor por nombre, CIF, ciudad..." class="w-full border p-2 rounded mb-3 focus:ring-2 focus:ring-blue-500">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
+                            <th class="p-3">Nombre</th>
+                            <th class="p-3">N. Comercial</th>
+                            <th class="p-3">CIF</th>
+                            <th class="p-3">Ciudad</th>
+                            <th class="p-3">Teléfono</th>
+                            <th class="p-3">Email</th>
+                            <th class="p-3">Estado</th>
+                            <th class="p-3">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaProveedores" class="divide-y text-sm">
+                        <tr><td colspan="8" class="p-4 text-center text-gray-500">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
+    </div>
+
+    <!-- Modal: Detalle -->
+    <div id="modalDetalle" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-lg font-bold text-gray-800">Detalle del Proveedor</h2>
+                <button id="btnCerrarDetalle" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <div id="contenidoDetalle" class="p-4 space-y-2 text-sm"></div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar -->
+    <div id="modalEditar" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-lg font-bold text-gray-800">Editar Proveedor</h2>
+                <button id="btnCerrarEditar" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <form id="formEditarProveedor" class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4" novalidate>
+                <input type="hidden" id="editId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nombre Proveedor:</label>
+                    <input type="text" id="editNombreProveedor" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nombre Comercial:</label>
+                    <input type="text" id="editNombreComercial" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">CIF:</label>
+                    <input type="text" id="editCif" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                    <p id="editCifError" class="text-xs text-red-600 mt-1 hidden">CIF/NIF no válido.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">IBAN:</label>
+                    <input type="text" id="editIban" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                    <p id="editIbanError" class="text-xs text-red-600 mt-1 hidden">El IBAN no es válido.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Forma de Pago:</label>
+                    <input type="text" id="editFormaPago" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Ciudad:</label>
+                    <input type="text" id="editCiudad" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Dirección Fiscal:</label>
+                    <input type="text" id="editDireccionFiscal" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono:</label>
+                    <input type="text" id="editTelefono" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email:</label>
+                    <input type="email" id="editEmail" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="sm:col-span-2">
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
+                        Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script src="/proveedores.js"></script>
