@@ -56,6 +56,45 @@
 
     </div>
 
+    <!-- Modal: Detalle -->
+    <div id="modalDetalle" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-lg font-bold text-gray-800">Detalle del Punto de Venta</h2>
+                <button id="btnCerrarDetalle" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <div id="contenidoDetalle" class="p-4 space-y-2 text-sm"></div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar -->
+    <div id="modalEditar" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-lg font-bold text-gray-800">Editar Punto de Venta</h2>
+                <button id="btnCerrarEditar" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <form id="formEditarPuntoVenta" class="space-y-4 p-4" novalidate>
+                <input type="hidden" id="editId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nombre del Punto de Venta:</label>
+                    <input type="text" id="editNombre" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Dirección:</label>
+                    <input type="text" id="editDireccion" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Stand:</label>
+                    <input type="text" id="editTipoStand" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
+                    Guardar Cambios
+                </button>
+            </form>
+        </div>
+    </div>
+
     <script src="/puntos-venta.js"></script>
     <script src="/nav.js"></script>
 </body>
