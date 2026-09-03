@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pkg from 'pg';
@@ -392,11 +393,12 @@ async function gestionarAccesoEmpleado({ usuarioIdExistente, nombre, email, pass
         throw new Error('La contraseña debe tener al menos 8 caracteres');
       }
       const hash = await bcrypt.hash(password, 10);
+      const nuevoId = crypto.randomUUID(); // generado aquí por si la BD no tiene DEFAULT en id
       const { rows } = await pool.query(
-        `INSERT INTO usuarios (empresa_id, nombre, email, password_hash, permisos, activo)
-         VALUES ((SELECT empresa_id FROM usuarios WHERE id = $1), $2, $3, $4, $5::jsonb, TRUE)
+        `INSERT INTO usuarios (id, empresa_id, nombre, email, password_hash, permisos, activo)
+         VALUES ($1, (SELECT empresa_id FROM usuarios WHERE id = $2), $3, $4, $5, $6::jsonb, TRUE)
          RETURNING id`,
-        [creadorId, nombre, email, hash, JSON.stringify(permisosObj)]
+        [nuevoId, creadorId, nombre, email, hash, JSON.stringify(permisosObj)]
       );
       return rows[0].id;
     }
