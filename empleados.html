@@ -115,7 +115,10 @@
                     <p id="accesoPasswordError" class="text-xs text-red-600 mt-1 hidden">Las contraseñas no coinciden (o tienen menos de 8 caracteres).</p>
                 </div>
                 <div class="sm:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Acceso por pestaña:</label>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Acceso por pestaña:</label>
+                        <button type="button" id="btnActivarTodosPermisos" class="text-xs text-blue-600 hover:underline font-medium">Activar todos</button>
+                    </div>
                     <div id="permisosGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 border rounded p-3"></div>
                 </div>
             </div>
@@ -256,7 +259,10 @@
                         <p id="editAccesoPasswordError" class="text-xs text-red-600 mt-1 hidden">Mínimo 8 caracteres.</p>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Acceso por pestaña:</label>
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Acceso por pestaña:</label>
+                            <button type="button" id="editBtnActivarTodosPermisos" class="text-xs text-blue-600 hover:underline font-medium">Activar todos</button>
+                        </div>
                         <div id="editPermisosGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 border rounded p-3"></div>
                     </div>
                 </div>

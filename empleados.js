@@ -46,25 +46,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         { clave: 'empleados', label: 'Empleados' }
     ];
 
+    // "Activar todos" enciende todo MENOS estas (más sensibles / de gestión), quedan como estaban
+    const EXCLUIDAS_DE_ACTIVAR_TODOS = ['empleados', 'proveedores', 'socios', 'puntos_venta'];
+
+    function claseBotonPermiso(activo) {
+        const base = 'w-full h-14 flex items-center justify-center text-center leading-tight px-2 rounded-lg text-xs transition border';
+        return activo
+            ? `${base} bg-blue-600 border-blue-600 text-white font-semibold`
+            : `${base} bg-gray-100 border-gray-300 text-gray-500 font-medium hover:bg-gray-200`;
+    }
+
     function pintarGridPermisos(contenedorId, valoresIniciales) {
         const contenedor = document.getElementById(contenedorId);
-        contenedor.innerHTML = PESTAÑAS.map(p => `
-            <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" class="permiso-check" data-clave="${p.clave}" ${valoresIniciales && valoresIniciales[p.clave] ? 'checked' : ''}>
-                ${p.label}
-            </label>
-        `).join('');
+        contenedor.innerHTML = PESTAÑAS.map(p => {
+            const activo = !!(valoresIniciales && valoresIniciales[p.clave]);
+            return `<button type="button" class="permiso-btn ${claseBotonPermiso(activo)}" data-clave="${p.clave}" data-activo="${activo}">${p.label}</button>`;
+        }).join('');
+
+        contenedor.querySelectorAll('.permiso-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const nuevoActivo = btn.dataset.activo !== 'true';
+                btn.dataset.activo = String(nuevoActivo);
+                btn.className = `permiso-btn ${claseBotonPermiso(nuevoActivo)}`;
+            });
+        });
     }
 
     function leerGridPermisos(contenedorId) {
         const permisos = {};
-        document.querySelectorAll(`#${contenedorId} .permiso-check`).forEach(chk => {
-            permisos[chk.dataset.clave] = chk.checked;
+        document.querySelectorAll(`#${contenedorId} .permiso-btn`).forEach(btn => {
+            permisos[btn.dataset.clave] = btn.dataset.activo === 'true';
         });
         return permisos;
     }
 
+    function activarTodosPermisos(contenedorId) {
+        document.querySelectorAll(`#${contenedorId} .permiso-btn`).forEach(btn => {
+            if (EXCLUIDAS_DE_ACTIVAR_TODOS.includes(btn.dataset.clave)) return; // se dejan como estaban
+            btn.dataset.activo = 'true';
+            btn.className = `permiso-btn ${claseBotonPermiso(true)}`;
+        });
+    }
+
     pintarGridPermisos('permisosGrid', {});
+    document.getElementById('btnActivarTodosPermisos').addEventListener('click', () => activarTodosPermisos('permisosGrid'));
+    document.getElementById('editBtnActivarTodosPermisos').addEventListener('click', () => activarTodosPermisos('editPermisosGrid'));
 
     // --- Mostrar/ocultar el bloque de "Dar acceso" (Alta) ---
     const checkboxDarAcceso = document.getElementById('darAcceso');
