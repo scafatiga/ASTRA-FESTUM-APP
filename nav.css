@@ -1,0 +1,150 @@
+/* ===== Astra Festum - Shell de navegación compartido ===== */
+
+body.af-has-shell {
+    padding-top: 52px;
+    padding-bottom: 72px;
+}
+
+/* --- Barra superior --- */
+.af-topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 52px;
+    background: #0f172a;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    z-index: 40;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.af-menu-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.af-menu-btn:hover { background: rgba(255,255,255,0.1); }
+
+.af-topbar-title {
+    flex: 1;
+    text-align: center;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    padding-right: 40px; /* compensa el botón para centrar de verdad */
+}
+
+/* --- Menú lateral (☰) --- */
+.af-menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+.af-menu-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.af-menu-panel {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 78%;
+    max-width: 320px;
+    background: #fff;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.15);
+}
+.af-menu-overlay.open .af-menu-panel {
+    transform: translateX(0);
+}
+
+.af-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 16px;
+}
+.af-menu-header button {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+
+.af-menu-list {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    overflow-y: auto;
+}
+.af-menu-link {
+    padding: 12px 12px;
+    border-radius: 8px;
+    color: #1f2937;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+.af-menu-link:hover { background: #f3f4f6; }
+.af-menu-link.active {
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
+/* --- Barra inferior --- */
+.af-bottom-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 64px;
+    background: #0f172a;
+    display: flex;
+    z-index: 40;
+    box-shadow: 0 -1px 4px rgba(0,0,0,0.2);
+}
+
+.af-bottom-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 600;
+    text-align: center;
+    padding: 6px 2px;
+}
+.af-bottom-item svg {
+    width: 20px;
+    height: 20px;
+}
+.af-bottom-item.active {
+    color: #60a5fa;
+}
+.af-bottom-item span.af-bottom-label {
+    line-height: 1.1;
+}
