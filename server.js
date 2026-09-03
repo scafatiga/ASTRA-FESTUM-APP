@@ -5,6 +5,9 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import { google } from 'googleapis';
+import { Readable } from 'stream';
 
 dotenv.config();
 
@@ -17,6 +20,60 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
+
+// Multer en memoria: el archivo nunca se guarda en el disco de Render,
+// se sube directo a Google Drive (evita el problema del disco efímero).
+const upload = multer({ storage: multer.memoryStorage() });
+
+// --- Google Drive: subida de archivos (Foto DNI, etc.) ---
+
+let driveClient = null;
+
+function getDriveClient() {
+  if (driveClient) return driveClient;
+  const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!credentialsJson) {
+    throw new Error('Falta la variable de entorno GOOGLE_SERVICE_ACCOUNT_KEY');
+  }
+  const credentials = JSON.parse(credentialsJson);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/drive']
+  });
+  driveClient = google.drive({ version: 'v3', auth });
+  return driveClient;
+}
+
+async function subirArchivoADrive(file) {
+  const drive = getDriveClient();
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+  const bufferStream = new Readable();
+  bufferStream.push(file.buffer);
+  bufferStream.push(null);
+
+  const nombreArchivo = `${Date.now()}_${file.originalname}`.replace(/\s+/g, '_');
+
+  const { data } = await drive.files.create({
+    requestBody: {
+      name: nombreArchivo,
+      parents: folderId ? [folderId] : undefined
+    },
+    media: {
+      mimeType: file.mimetype,
+      body: bufferStream
+    },
+    fields: 'id, webViewLink'
+  });
+
+  // Permite que cualquiera con el enlace pueda VER el archivo (necesario para mostrarlo luego)
+  await drive.permissions.create({
+    fileId: data.id,
+    requestBody: { role: 'reader', type: 'anyone' }
+  });
+
+  return data.webViewLink;
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -160,7 +217,7 @@ app.get('/api/personal', async (req, res) => {
   }
 });
 
-app.post('/api/personal', async (req, res) => {
+app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
   const {
     usuario_id,
     nombre,
@@ -174,9 +231,7 @@ app.post('/api/personal', async (req, res) => {
     fecha_out,
     horas_alta,
     punto_venta_id,
-    direccion,
     email,
-    foto_dni,
     estado
   } = req.body;
 
@@ -185,13 +240,18 @@ app.post('/api/personal', async (req, res) => {
   }
 
   try {
+    let fotoDniUrl = null;
+    if (req.file) {
+      fotoDniUrl = await subirArchivoADrive(req.file);
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
-         iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id, direccion,
+         iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
          email, foto_dni, estado)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, TRUE))
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, TRUE))
        RETURNING *`,
       [
         usuario_id || null,
@@ -206,9 +266,8 @@ app.post('/api/personal', async (req, res) => {
         fecha_out || null,
         horas_alta || null,
         punto_venta_id || null,
-        direccion || null,
         email || null,
-        foto_dni || null,
+        fotoDniUrl,
         estado
       ]
     );
