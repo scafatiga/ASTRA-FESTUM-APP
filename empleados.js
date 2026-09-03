@@ -126,12 +126,196 @@ document.addEventListener('DOMContentLoaded', async () => {
         return d.toLocaleDateString('es-ES');
     }
 
+    // --- Colapsar / expandir la lista ---
+    const btnToggleLista = document.getElementById('btnToggleLista');
+    const listaWrapper = document.getElementById('listaEmpleadosWrapper');
+    const iconoToggleLista = document.getElementById('iconoToggleLista');
+    btnToggleLista.addEventListener('click', () => {
+        const abierta = !listaWrapper.classList.contains('hidden');
+        listaWrapper.classList.toggle('hidden');
+        iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+
+    // --- Cambiar Activo/Inactivo desde el menú de Acción ---
+    async function cambiarEstadoEmpleado(id, estadoActual) {
+        try {
+            const res = await fetch(`/api/personal/${id}/estado`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ estado: !estadoActual })
+            });
+            if (!res.ok) throw new Error('Error al actualizar estado');
+            cargarEmpleados();
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo actualizar el estado.');
+        }
+    }
+
+    // --- Detalle (solo lectura) ---
+    async function abrirDetalle(id) {
+        try {
+            const res = await fetch(`/api/personal/${id}`);
+            if (!res.ok) throw new Error('No se pudo cargar el empleado');
+            const e = await res.json();
+
+            const filas = [
+                ['Nombre', e.nombre],
+                ['DNI / NIE', e.dni],
+                ['Nº Seguridad Social', e.numero_seguridad_social],
+                ['Nacionalidad', e.nacionalidad],
+                ['Fecha de Nacimiento', formatearFecha(e.fecha_nacimiento)],
+                ['IBAN', e.iban],
+                ['Domicilio', e.domicilio],
+                ['Fecha IN', formatearFecha(e.fecha_in)],
+                ['Fecha OUT', formatearFecha(e.fecha_out)],
+                ['Jornada Semanal', e.horas_alta],
+                ['Punto de Venta', nombrePuntoVenta(e.punto_venta_id)],
+                ['Email', e.email],
+                ['Estado', e.estado ? 'Activo' : 'Inactivo'],
+                ['Foto DNI', e.tiene_foto_dni
+                    ? `<a href="/api/personal/${e.id}/foto-dni" target="_blank" class="text-blue-600 hover:underline">Ver archivo</a>`
+                    : 'No adjuntada']
+            ];
+
+            document.getElementById('contenidoDetalle').innerHTML = filas.map(([label, valor]) => `
+                <div class="flex justify-between border-b py-1.5 gap-4">
+                    <span class="text-gray-500">${label}</span>
+                    <span class="text-gray-800 font-medium text-right">${valor || '-'}</span>
+                </div>
+            `).join('');
+
+            document.getElementById('modalDetalle').classList.remove('hidden');
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo cargar el detalle del empleado.');
+        }
+    }
+    document.getElementById('btnCerrarDetalle').addEventListener('click', () => {
+        document.getElementById('modalDetalle').classList.add('hidden');
+    });
+
+    // --- Editar ---
+    const formEditar = document.getElementById('formEditarEmpleado');
+
+    async function abrirEditar(id) {
+        try {
+            const res = await fetch(`/api/personal/${id}`);
+            if (!res.ok) throw new Error('No se pudo cargar el empleado');
+            const e = await res.json();
+
+            document.getElementById('editId').value = e.id;
+            document.getElementById('editNombre').value = e.nombre || '';
+            document.getElementById('editDni').value = e.dni || '';
+            document.getElementById('editNumeroSegSocial').value = e.numero_seguridad_social || '';
+            document.getElementById('editNacionalidad').value = e.nacionalidad || '';
+            document.getElementById('editFechaNacimiento').value = e.fecha_nacimiento ? e.fecha_nacimiento.substring(0, 10) : '';
+            document.getElementById('editIban').value = e.iban || '';
+            document.getElementById('editDomicilio').value = e.domicilio || '';
+            document.getElementById('editFechaIn').value = e.fecha_in ? e.fecha_in.substring(0, 10) : '';
+            document.getElementById('editFechaOut').value = e.fecha_out ? e.fecha_out.substring(0, 10) : '';
+            document.getElementById('editHorasAlta').value = e.horas_alta || '';
+            document.getElementById('editEmail').value = e.email || '';
+            document.getElementById('editEstado').value = e.estado ? 'true' : 'false';
+            document.getElementById('editFotoDni').value = '';
+
+            const selectEditPV = document.getElementById('editPuntoVenta');
+            const opciones = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            selectEditPV.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
+            selectEditPV.value = e.punto_venta_id || '';
+
+            document.getElementById('editDniError').classList.add('hidden');
+            document.getElementById('editSegSocialError').classList.add('hidden');
+            document.getElementById('editIbanError').classList.add('hidden');
+
+            document.getElementById('modalEditar').classList.remove('hidden');
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo cargar el empleado para editar.');
+        }
+    }
+    document.getElementById('btnCerrarEditar').addEventListener('click', () => {
+        document.getElementById('modalEditar').classList.add('hidden');
+    });
+
+    formEditar.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const dni = document.getElementById('editDni').value.trim();
+        const segSocial = document.getElementById('editNumeroSegSocial').value.trim();
+        const iban = document.getElementById('editIban').value.trim();
+
+        let valido = true;
+        if (dni) {
+            const { valido: dniValido } = validarDocumento(dni);
+            mostrarError('editDni', 'editDniError', dniValido);
+            valido = valido && dniValido;
+        }
+        if (segSocial) {
+            const segSocialValido = validarSegSocial(segSocial);
+            mostrarError('editNumeroSegSocial', 'editSegSocialError', segSocialValido);
+            valido = valido && segSocialValido;
+        }
+        if (iban) {
+            const ibanValido = validarIBAN(iban);
+            mostrarError('editIban', 'editIbanError', ibanValido);
+            valido = valido && ibanValido;
+        }
+        if (!valido) return;
+
+        const id = document.getElementById('editId').value;
+        const formData = new FormData();
+        formData.append('nombre', document.getElementById('editNombre').value.trim());
+        formData.append('dni', dni);
+        formData.append('numero_seguridad_social', segSocial);
+        formData.append('nacionalidad', document.getElementById('editNacionalidad').value.trim());
+        formData.append('fecha_nacimiento', document.getElementById('editFechaNacimiento').value || '');
+        formData.append('iban', iban);
+        formData.append('domicilio', document.getElementById('editDomicilio').value.trim());
+        formData.append('fecha_in', document.getElementById('editFechaIn').value || '');
+        formData.append('fecha_out', document.getElementById('editFechaOut').value || '');
+        formData.append('horas_alta', document.getElementById('editHorasAlta').value || '');
+        formData.append('punto_venta_id', document.getElementById('editPuntoVenta').value || '');
+        formData.append('email', document.getElementById('editEmail').value.trim());
+        formData.append('estado', document.getElementById('editEstado').value);
+
+        const archivoFotoDni = document.getElementById('editFotoDni').files[0];
+        if (archivoFotoDni) {
+            formData.append('fotoDni', archivoFotoDni);
+        }
+
+        try {
+            const res = await fetch(`/api/personal/${id}`, { method: 'PUT', body: formData });
+            if (!res.ok) throw new Error('Error al guardar los cambios');
+            document.getElementById('modalEditar').classList.add('hidden');
+            cargarEmpleados();
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo guardar el empleado.');
+        }
+    });
+
+    // --- Eliminar ---
+    async function eliminarEmpleado(id) {
+        if (!confirm('¿Seguro que quieres eliminar este empleado? Esta acción no se puede deshacer.')) return;
+        try {
+            const res = await fetch(`/api/personal/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Error al eliminar');
+            cargarEmpleados();
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo eliminar el empleado.');
+        }
+    }
+
     // --- Cargar lista de empleados ---
     async function cargarEmpleados() {
         try {
             const res = await fetch('/api/personal');
             if (!res.ok) throw new Error('Error al cargar empleados');
             const datos = await res.json();
+
+            document.getElementById('contadorEmpleados').textContent = datos ? datos.length : 0;
 
             if (!datos || datos.length === 0) {
                 tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay empleados registrados.</td></tr>`;
@@ -158,28 +342,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </span>
                     </td>
                     <td class="p-3">
-                        <button data-id="${e.id}" data-estado="${e.estado}" class="btnToggleEstado text-xs px-3 py-1.5 rounded transition ${e.estado ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}">
-                            ${e.estado ? 'Desactivar' : 'Activar'}
-                        </button>
+                        <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${e.id}" data-estado="${e.estado}">
+                            <option value="">Acción...</option>
+                            <option value="estado">${e.estado ? 'Desactivar' : 'Activar'}</option>
+                            <option value="detalle">Detalle</option>
+                            <option value="editar">Editar</option>
+                            <option value="eliminar">Eliminar</option>
+                        </select>
                     </td>
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.btnToggleEstado').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    const id = btn.dataset.id;
-                    const estadoActual = btn.dataset.estado === 'true';
-                    try {
-                        const res = await fetch(`/api/personal/${id}/estado`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ estado: !estadoActual })
-                        });
-                        if (!res.ok) throw new Error('Error al actualizar estado');
-                        cargarEmpleados();
-                    } catch (err) {
-                        console.error(err);
-                        alert('No se pudo actualizar el estado.');
+            document.querySelectorAll('.accionSelect').forEach(sel => {
+                sel.addEventListener('change', async () => {
+                    const id = sel.dataset.id;
+                    const accion = sel.value;
+                    sel.value = ''; // vuelve al placeholder tras ejecutar
+
+                    if (accion === 'estado') {
+                        await cambiarEstadoEmpleado(id, sel.dataset.estado === 'true');
+                    } else if (accion === 'detalle') {
+                        await abrirDetalle(id);
+                    } else if (accion === 'editar') {
+                        await abrirEditar(id);
+                    } else if (accion === 'eliminar') {
+                        await eliminarEmpleado(id);
                     }
                 });
             });

@@ -374,6 +374,90 @@ app.patch('/api/personal/:id/estado', async (req, res) => {
   }
 });
 
+// Obtener la ficha completa de un empleado (para el modal de Detalle/Editar)
+app.get('/api/personal/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, usuario_id, nombre, dni, numero_seguridad_social, nacionalidad,
+              fecha_nacimiento, iban, domicilio, fecha_in, fecha_out, horas_alta,
+              punto_venta_id, email, estado, created_at,
+              (foto_dni_data IS NOT NULL) AS tiene_foto_dni
+       FROM empleados WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Empleado no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/personal/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editar un empleado. Si se adjunta un archivo nuevo, sustituye la Foto DNI;
+// si no, se conserva la que ya hubiera.
+app.put('/api/personal/:id', upload.single('fotoDni'), async (req, res) => {
+  const { id } = req.params;
+  const {
+    usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
+    iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id, email, estado
+  } = req.body;
+
+  if (!nombre) {
+    return res.status(400).json({ error: 'Falta el nombre del empleado' });
+  }
+
+  const camposBase = [
+    usuario_id || null, nombre, dni || null, numero_seguridad_social || null, nacionalidad || null,
+    fecha_nacimiento || null, iban || null, domicilio || null, fecha_in || null, fecha_out || null,
+    horas_alta || null, punto_venta_id || null, email || null, estado
+  ];
+
+  try {
+    let rows;
+    if (req.file) {
+      ({ rows } = await pool.query(
+        `UPDATE empleados SET
+           usuario_id=$1, nombre=$2, dni=$3, numero_seguridad_social=$4, nacionalidad=$5,
+           fecha_nacimiento=$6, iban=$7, domicilio=$8, fecha_in=$9, fecha_out=$10,
+           horas_alta=$11, punto_venta_id=$12, email=$13, estado=COALESCE($14::boolean, estado),
+           foto_dni_data=$15, foto_dni_mime=$16, foto_dni_nombre_original=$17
+         WHERE id=$18
+         RETURNING id`,
+        [...camposBase, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE empleados SET
+           usuario_id=$1, nombre=$2, dni=$3, numero_seguridad_social=$4, nacionalidad=$5,
+           fecha_nacimiento=$6, iban=$7, domicilio=$8, fecha_in=$9, fecha_out=$10,
+           horas_alta=$11, punto_venta_id=$12, email=$13, estado=COALESCE($14::boolean, estado)
+         WHERE id=$15
+         RETURNING id`,
+        [...camposBase, id]
+      ));
+    }
+
+    if (!rows[0]) return res.status(404).json({ error: 'Empleado no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/personal/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Eliminar un empleado
+app.delete('/api/personal/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM empleados WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/personal/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- PROVEEDORES ---
 
 app.get('/api/proveedores', async (req, res) => {
