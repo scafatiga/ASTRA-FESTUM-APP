@@ -41,7 +41,8 @@
         { label: 'Histórico de Cierres', href: '/historico.html', permiso: 'historico' },
         { label: 'Puntos de Venta', href: '/puntos-venta.html', permiso: 'puntos_venta' },
         { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
-        { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' }
+        { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },
+        { label: 'Base Punto de Venta', href: '/base-punto-venta.html', permiso: 'base_punto_venta' }
     ];
 
     function rutaActual() {

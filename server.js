@@ -58,7 +58,8 @@ const PAGE_PERMISOS = {
   '/gastos-tarjeta.html': 'gastos_tarjeta',
   '/puntos-venta.html': 'puntos_venta',
   '/proveedores.html': 'proveedores',
-  '/empleados.html': 'empleados'
+  '/empleados.html': 'empleados',
+  '/base-punto-venta.html': 'base_punto_venta'
 };
 
 const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
@@ -1313,6 +1314,96 @@ app.delete('/api/socios/:id', requirePermiso('socios'), async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/socios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- BASE PUNTO DE VENTA (traspasos entre puntos de venta) ---
+
+app.get('/api/base-punto-venta', requirePermiso('base_punto_venta'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.*, u.nombre AS registrado_por_nombre
+       FROM base_punto_venta b
+       LEFT JOIN usuarios u ON u.id = b.registrado_por
+       ORDER BY b.fecha DESC, b.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/base-punto-venta:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM base_punto_venta WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Registro no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/base-punto-venta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/base-punto-venta', requirePermiso('base_punto_venta'), async (req, res) => {
+  const { fecha, punto_venta_origen_id, punto_venta_destino_id, importe } = req.body;
+
+  if (!fecha || !punto_venta_origen_id || !punto_venta_destino_id || !importe) {
+    return res.status(400).json({ error: 'Fecha, punto de venta origen, destino e importe son obligatorios' });
+  }
+  if (String(punto_venta_origen_id) === String(punto_venta_destino_id)) {
+    return res.status(400).json({ error: 'El punto de venta origen y destino no pueden ser el mismo' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO base_punto_venta (fecha, punto_venta_origen_id, punto_venta_destino_id, importe, registrado_por)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [fecha, punto_venta_origen_id, punto_venta_destino_id, importe, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/base-punto-venta:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, punto_venta_origen_id, punto_venta_destino_id, importe } = req.body;
+
+  if (!fecha || !punto_venta_origen_id || !punto_venta_destino_id || !importe) {
+    return res.status(400).json({ error: 'Fecha, punto de venta origen, destino e importe son obligatorios' });
+  }
+  if (String(punto_venta_origen_id) === String(punto_venta_destino_id)) {
+    return res.status(400).json({ error: 'El punto de venta origen y destino no pueden ser el mismo' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE base_punto_venta SET fecha=$1, punto_venta_origen_id=$2, punto_venta_destino_id=$3, importe=$4
+       WHERE id=$5
+       RETURNING *`,
+      [fecha, punto_venta_origen_id, punto_venta_destino_id, importe, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Registro no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/base-punto-venta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM base_punto_venta WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/base-punto-venta/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
