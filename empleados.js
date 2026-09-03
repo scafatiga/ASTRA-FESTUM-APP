@@ -44,7 +44,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         { clave: 'puntos_venta', label: 'Puntos de Venta' },
         { clave: 'proveedores', label: 'Proveedores' },
         { clave: 'empleados', label: 'Empleados' },
-        { clave: 'base_punto_venta', label: 'Base Punto de Venta' }
+        { clave: 'base_punto_venta', label: 'Base Punto de Venta' },
+        { clave: 'factura_cash', label: 'Factura Cash' }
     ];
 
     // "Activar todos" enciende todo MENOS estas (más sensibles / de gestión), quedan como estaban
@@ -488,14 +489,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </span>
                     </td>
                     <td class="p-3">
-                        <span class="px-2 py-1 rounded text-xs font-semibold ${e.estado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
+                        <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${e.estado ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${e.id}" data-estado="${e.estado}">
                             ${e.estado ? 'Activo' : 'No Activo'}
-                        </span>
+                        </button>
                     </td>
                     <td class="p-3">
-                        <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${e.id}" data-estado="${e.estado}">
+                        <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${e.id}">
                             <option value="">Acción...</option>
-                            <option value="estado">${e.estado ? 'Desactivar' : 'Activar'}</option>
                             <option value="detalle">Detalle</option>
                             <option value="editar">Editar</option>
                             <option value="eliminar">Eliminar</option>
@@ -504,15 +504,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `).join('');
 
+            document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+                btn.addEventListener('click', () => cambiarEstadoEmpleado(btn.dataset.id, btn.dataset.estado === 'true'));
+            });
+
         document.querySelectorAll('.accionSelect').forEach(sel => {
             sel.addEventListener('change', async () => {
                 const id = sel.dataset.id;
                 const accion = sel.value;
                 sel.value = ''; // vuelve al placeholder tras ejecutar
 
-                if (accion === 'estado') {
-                    await cambiarEstadoEmpleado(id, sel.dataset.estado === 'true');
-                } else if (accion === 'detalle') {
+                if (accion === 'detalle') {
                     await abrirDetalle(id);
                 } else if (accion === 'editar') {
                     await abrirEditar(id);

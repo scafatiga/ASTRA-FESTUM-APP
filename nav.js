@@ -42,7 +42,8 @@
         { label: 'Puntos de Venta', href: '/puntos-venta.html', permiso: 'puntos_venta' },
         { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
         { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },
-        { label: 'Base Punto de Venta', href: '/base-punto-venta.html', permiso: 'base_punto_venta' }
+        { label: 'Base Punto de Venta', href: '/base-punto-venta.html', permiso: 'base_punto_venta' },
+        { label: 'Factura Cash', href: '/factura-cash.html', permiso: 'factura_cash' }
     ];
 
     function rutaActual() {

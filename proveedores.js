@@ -148,14 +148,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-gray-600">${p.telefono || '-'}</td>
                 <td class="p-3 text-gray-600">${p.email || '-'}</td>
                 <td class="p-3">
-                    <span class="px-2 py-1 rounded text-xs font-semibold ${p.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
+                    <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${p.activo ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${p.id}" data-activo="${p.activo}">
                         ${p.activo ? 'Activo' : 'Inactivo'}
-                    </span>
+                    </button>
                 </td>
                 <td class="p-3">
-                    <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${p.id}" data-activo="${p.activo}">
+                    <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${p.id}">
                         <option value="">Acción...</option>
-                        <option value="estado">${p.activo ? 'Desactivar' : 'Activar'}</option>
                         <option value="detalle">Detalle</option>
                         <option value="editar">Editar</option>
                         <option value="eliminar">Eliminar</option>
@@ -164,15 +163,17 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
         `).join('');
 
+        document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+            btn.addEventListener('click', () => cambiarEstado(btn.dataset.id, btn.dataset.activo === 'true'));
+        });
+
         document.querySelectorAll('.accionSelect').forEach(sel => {
             sel.addEventListener('change', async () => {
                 const id = sel.dataset.id;
                 const accion = sel.value;
                 sel.value = '';
 
-                if (accion === 'estado') {
-                    await cambiarEstado(id, sel.dataset.activo === 'true');
-                } else if (accion === 'detalle') {
+                if (accion === 'detalle') {
                     abrirDetalle(id);
                 } else if (accion === 'editar') {
                     abrirEditar(id);

@@ -59,7 +59,8 @@ const PAGE_PERMISOS = {
   '/puntos-venta.html': 'puntos_venta',
   '/proveedores.html': 'proveedores',
   '/empleados.html': 'empleados',
-  '/base-punto-venta.html': 'base_punto_venta'
+  '/base-punto-venta.html': 'base_punto_venta',
+  '/factura-cash.html': 'factura_cash'
 };
 
 const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
@@ -290,6 +291,50 @@ app.patch('/api/puntos-venta/:id/estado', requirePermiso('puntos_venta'), async 
     );
     res.json(rows[0]);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM puntos_venta WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Punto de venta no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/puntos-venta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res) => {
+  const { id } = req.params;
+  const { nombre, direccion, tipo_stand } = req.body;
+
+  if (!nombre) {
+    return res.status(400).json({ error: 'Falta el nombre del punto de venta' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'UPDATE puntos_venta SET nombre=$1, direccion=$2, tipo_stand=$3 WHERE id=$4 RETURNING *',
+      [nombre, direccion || null, tipo_stand || null, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Punto de venta no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/puntos-venta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM puntos_venta WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/puntos-venta/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1404,6 +1449,133 @@ app.delete('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), asyn
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/base-punto-venta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- FACTURA CASH ---
+
+app.get('/api/factura-cash', requirePermiso('factura_cash'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT f.id, f.fecha, f.proveedor_id, f.importe, f.observaciones,
+              f.factura_nombre_original, f.created_at,
+              u.nombre AS registrado_por_nombre
+       FROM factura_cash f
+       LEFT JOIN usuarios u ON u.id = f.registrado_por
+       ORDER BY f.fecha DESC, f.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/factura-cash:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/factura-cash/:id', requirePermiso('factura_cash'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, fecha, proveedor_id, importe, observaciones, factura_nombre_original,
+              (factura_data IS NOT NULL) AS tiene_factura
+       FROM factura_cash WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Factura no encontrada' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/factura-cash/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/factura-cash/:id/factura', requirePermiso('factura_cash'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      'SELECT factura_data, factura_mime, factura_nombre_original FROM factura_cash WHERE id = $1',
+      [id]
+    );
+    if (!rows[0] || !rows[0].factura_data) {
+      return res.status(404).send('No hay factura para este registro');
+    }
+    const { factura_data, factura_mime, factura_nombre_original } = rows[0];
+    res.set('Content-Type', factura_mime || 'application/octet-stream');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="${factura_nombre_original || `factura-${id}`}"`);
+    }
+    res.send(factura_data);
+  } catch (err) {
+    console.error('Error GET /api/factura-cash/:id/factura:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/factura-cash', requirePermiso('factura_cash'), upload.single('factura'), async (req, res) => {
+  const { fecha, proveedor_id, importe, observaciones } = req.body;
+
+  if (!fecha || !proveedor_id || !importe || !req.file) {
+    return res.status(400).json({ error: 'Fecha, proveedor, importe y factura son obligatorios' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO factura_cash
+        (fecha, proveedor_id, importe, observaciones, factura_data, factura_mime, factura_nombre_original, registrado_por)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, fecha, proveedor_id, importe, observaciones, factura_nombre_original`,
+      [fecha, proveedor_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/factura-cash:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/factura-cash/:id', requirePermiso('factura_cash'), upload.single('factura'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, proveedor_id, importe, observaciones } = req.body;
+
+  if (!fecha || !proveedor_id || !importe) {
+    return res.status(400).json({ error: 'Fecha, proveedor e importe son obligatorios' });
+  }
+
+  try {
+    let rows;
+    if (req.file) {
+      ({ rows } = await pool.query(
+        `UPDATE factura_cash SET
+           fecha=$1, proveedor_id=$2, importe=$3, observaciones=$4,
+           factura_data=$5, factura_mime=$6, factura_nombre_original=$7
+         WHERE id=$8
+         RETURNING id`,
+        [fecha, proveedor_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE factura_cash SET fecha=$1, proveedor_id=$2, importe=$3, observaciones=$4
+         WHERE id=$5
+         RETURNING id`,
+        [fecha, proveedor_id, importe, observaciones || null, id]
+      ));
+    }
+    if (!rows[0]) return res.status(404).json({ error: 'Factura no encontrada' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/factura-cash/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/factura-cash/:id', requirePermiso('factura_cash'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM factura_cash WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/factura-cash/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
