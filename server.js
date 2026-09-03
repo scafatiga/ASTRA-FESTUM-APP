@@ -596,5 +596,132 @@ app.delete('/api/proveedores/:id', async (req, res) => {
   }
 });
 
+// --- INGRESOS ---
+
+// Lista, sin el archivo pesado (solo si tiene comprobante), de más nuevo a más antiguo
+app.get('/api/ingresos', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, fecha, importe, punto_venta_id, comprobante_nombre_original, created_at
+       FROM ingresos
+       ORDER BY fecha DESC, created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/ingresos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Un ingreso completo (para Editar)
+app.get('/api/ingresos/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, fecha, importe, punto_venta_id, comprobante_nombre_original,
+              (comprobante_data IS NOT NULL) AS tiene_comprobante
+       FROM ingresos WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Ingreso no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/ingresos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Descargar/ver el comprobante
+app.get('/api/ingresos/:id/comprobante', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      'SELECT comprobante_data, comprobante_mime, comprobante_nombre_original FROM ingresos WHERE id = $1',
+      [id]
+    );
+    if (!rows[0] || !rows[0].comprobante_data) {
+      return res.status(404).send('No hay comprobante para este ingreso');
+    }
+    const { comprobante_data, comprobante_mime, comprobante_nombre_original } = rows[0];
+    res.set('Content-Type', comprobante_mime || 'application/octet-stream');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="${comprobante_nombre_original || `comprobante-${id}`}"`);
+    }
+    res.send(comprobante_data);
+  } catch (err) {
+    console.error('Error GET /api/ingresos/:id/comprobante:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ingresos', upload.single('comprobante'), async (req, res) => {
+  const { fecha, importe, punto_venta_id } = req.body;
+
+  if (!fecha || !importe || !punto_venta_id || !req.file) {
+    return res.status(400).json({ error: 'Fecha, importe, punto de venta y comprobante son obligatorios' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO ingresos
+        (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original)
+       VALUES
+        ($1, $2, $3, $4, $5, $6)
+       RETURNING id, fecha, importe, punto_venta_id, comprobante_nombre_original`,
+      [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/ingresos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/ingresos/:id', upload.single('comprobante'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, importe, punto_venta_id } = req.body;
+
+  if (!fecha || !importe || !punto_venta_id) {
+    return res.status(400).json({ error: 'Fecha, importe y punto de venta son obligatorios' });
+  }
+
+  try {
+    let rows;
+    if (req.file) {
+      ({ rows } = await pool.query(
+        `UPDATE ingresos SET
+           fecha=$1, importe=$2, punto_venta_id=$3,
+           comprobante_data=$4, comprobante_mime=$5, comprobante_nombre_original=$6
+         WHERE id=$7
+         RETURNING id`,
+        [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE ingresos SET fecha=$1, importe=$2, punto_venta_id=$3
+         WHERE id=$4
+         RETURNING id`,
+        [fecha, importe, punto_venta_id, id]
+      ));
+    }
+    if (!rows[0]) return res.status(404).json({ error: 'Ingreso no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/ingresos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/ingresos/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM ingresos WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/ingresos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
