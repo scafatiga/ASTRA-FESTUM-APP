@@ -2,8 +2,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     const form = document.getElementById('formEmpleado');
     const tabla = document.getElementById('tablaEmpleados');
     const selectPuntoVenta = document.getElementById('puntoVenta');
+    const checkboxGestoria = document.getElementById('gestoria');
+    const grupoGestoria1 = document.getElementById('grupoGestoria1');
+    const grupoGestoria2 = document.getElementById('grupoGestoria2');
 
-    // Cache de puntos de venta: id -> nombre, para mostrar nombre en la tabla
+    // Campos que solo son obligatorios cuando Gestoría = Sí
+    const CAMPOS_GESTORIA = ['dni', 'numeroSegSocial', 'nacionalidad', 'fechaNacimiento', 'iban', 'domicilio', 'fechaIn', 'fechaOut', 'horasAlta'];
+
+    // --- Mostrar/ocultar según el checkbox de Gestoría ---
+    function actualizarVisibilidadGestoria() {
+        const activo = checkboxGestoria.checked;
+
+        [grupoGestoria1, grupoGestoria2].forEach(grupo => {
+            if (activo) {
+                grupo.classList.remove('hidden');
+                grupo.classList.add('contents');
+            } else {
+                grupo.classList.remove('contents');
+                grupo.classList.add('hidden');
+            }
+        });
+
+        CAMPOS_GESTORIA.forEach(id => {
+            document.getElementById(id).required = activo;
+        });
+        document.getElementById('fotoDni').required = activo;
+    }
+
+    checkboxGestoria.addEventListener('change', actualizarVisibilidadGestoria);
+    actualizarVisibilidadGestoria(); // estado inicial
+
+    // --- Validaciones ---
+
+    // NIE: letra (X/Y/Z) + 7 dígitos + letra de control
+    function validarNIE(valor) {
+        const nie = (valor || '').trim().toUpperCase();
+        if (!/^[XYZ]\d{7}[A-Z]$/.test(nie)) return false;
+        const mapaLetraInicial = { X: '0', Y: '1', Z: '2' };
+        const numero = mapaLetraInicial[nie[0]] + nie.slice(1, 8);
+        const letras = 'TRWAGMYFPDXBNJZSQVHLCKE';
+        const letraEsperada = letras[parseInt(numero, 10) % 23];
+        return letraEsperada === nie[8];
+    }
+
+    // Nº Seguridad Social: exactamente 12 dígitos
+    function validarSegSocial(valor) {
+        return /^\d{12}$/.test((valor || '').trim());
+    }
+
+    // IBAN: comprobación de dígito de control (algoritmo mod 97)
+    function validarIBAN(valor) {
+        const iban = (valor || '').replace(/\s+/g, '').toUpperCase();
+        if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(iban) || iban.length < 15) return false;
+        const reordenado = iban.slice(4) + iban.slice(0, 4);
+        const convertido = reordenado.replace(/[A-Z]/g, ch => (ch.charCodeAt(0) - 55).toString());
+        let resto = 0;
+        for (let i = 0; i < convertido.length; i++) {
+            resto = (resto * 10 + parseInt(convertido[i], 10)) % 97;
+        }
+        return resto === 1;
+    }
+
+    function mostrarError(idCampo, idError, esValido) {
+        const campo = document.getElementById(idCampo);
+        const error = document.getElementById(idError);
+        if (esValido) {
+            campo.classList.remove('border-red-500');
+            error.classList.add('hidden');
+        } else {
+            campo.classList.add('border-red-500');
+            error.classList.remove('hidden');
+        }
+    }
+
+    // --- Cargar puntos de venta para el desplegable ---
     let puntosVentaCache = [];
 
     async function cargarPuntosVentaSelect() {
@@ -33,6 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return d.toLocaleDateString('es-ES');
     }
 
+    // --- Cargar lista de empleados ---
     async function cargarEmpleados() {
         try {
             const res = await fetch('/api/personal');
@@ -96,31 +169,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // --- Envío del formulario ---
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const gestoriaActiva = checkboxGestoria.checked;
             const nombre = document.getElementById('nombre').value.trim();
-            if (!nombre) return;
+
+            // Validación nativa de campos obligatorios (respeta el required dinámico ya aplicado)
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            // Validaciones específicas, solo si el bloque de Gestoría está activo y visible
+            if (gestoriaActiva) {
+                const dni = document.getElementById('dni').value.trim();
+                const segSocial = document.getElementById('numeroSegSocial').value.trim();
+                const iban = document.getElementById('iban').value.trim();
+
+                const dniValido = validarNIE(dni);
+                const segSocialValido = validarSegSocial(segSocial);
+                const ibanValido = validarIBAN(iban);
+
+                mostrarError('dni', 'dniError', dniValido);
+                mostrarError('numeroSegSocial', 'segSocialError', segSocialValido);
+                mostrarError('iban', 'ibanError', ibanValido);
+
+                if (!dniValido || !segSocialValido || !ibanValido) {
+                    return; // no envía el formulario hasta que los 3 campos sean válidos
+                }
+            }
 
             const formData = new FormData();
             formData.append('nombre', nombre);
-            formData.append('dni', document.getElementById('dni').value.trim());
-            formData.append('numero_seguridad_social', document.getElementById('numeroSegSocial').value.trim());
-            formData.append('nacionalidad', document.getElementById('nacionalidad').value.trim());
-            formData.append('fecha_nacimiento', document.getElementById('fechaNacimiento').value || '');
-            formData.append('iban', document.getElementById('iban').value.trim());
-            formData.append('domicilio', document.getElementById('domicilio').value.trim());
-            formData.append('fecha_in', document.getElementById('fechaIn').value || '');
-            formData.append('fecha_out', document.getElementById('fechaOut').value || '');
-            formData.append('horas_alta', document.getElementById('horasAlta').value || '');
             formData.append('punto_venta_id', document.getElementById('puntoVenta').value || '');
             formData.append('email', document.getElementById('email').value.trim());
-            formData.append('enviarGestoria', document.getElementById('enviarGestoria').checked);
+            formData.append('estado', document.getElementById('estado').value);
+            formData.append('enviarGestoria', gestoriaActiva);
 
-            const archivoFotoDni = document.getElementById('fotoDni').files[0];
-            if (archivoFotoDni) {
-                formData.append('fotoDni', archivoFotoDni);
+            if (gestoriaActiva) {
+                formData.append('dni', document.getElementById('dni').value.trim());
+                formData.append('numero_seguridad_social', document.getElementById('numeroSegSocial').value.trim());
+                formData.append('nacionalidad', document.getElementById('nacionalidad').value.trim());
+                formData.append('fecha_nacimiento', document.getElementById('fechaNacimiento').value || '');
+                formData.append('iban', document.getElementById('iban').value.trim());
+                formData.append('domicilio', document.getElementById('domicilio').value.trim());
+                formData.append('fecha_in', document.getElementById('fechaIn').value || '');
+                formData.append('fecha_out', document.getElementById('fechaOut').value || '');
+                formData.append('horas_alta', document.getElementById('horasAlta').value || '');
+
+                const archivoFotoDni = document.getElementById('fotoDni').files[0];
+                if (archivoFotoDni) {
+                    formData.append('fotoDni', archivoFotoDni);
+                }
             }
 
             try {
@@ -132,7 +235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!res.ok) throw new Error('Error al crear empleado');
 
                 const resultado = await res.json();
-                if (document.getElementById('enviarGestoria').checked) {
+                if (gestoriaActiva) {
                     if (resultado.gestoria_enviada) {
                         alert('Empleado creado y email enviado a la Gestoría.');
                     } else {
@@ -141,6 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
 
                 form.reset();
+                actualizarVisibilidadGestoria();
                 cargarEmpleados();
             } catch (err) {
                 console.error(err);

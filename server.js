@@ -302,7 +302,7 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
          iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
          email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, estado)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17, TRUE))
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::boolean, TRUE))
        RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
         usuario_id || null,
