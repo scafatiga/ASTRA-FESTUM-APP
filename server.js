@@ -6,8 +6,6 @@ const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
-import { google } from 'googleapis';
-import { Readable } from 'stream';
 
 dotenv.config();
 
@@ -21,59 +19,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
 
-// Multer en memoria: el archivo nunca se guarda en el disco de Render,
-// se sube directo a Google Drive (evita el problema del disco efímero).
+// Multer en memoria: el archivo se guarda directo en la base de datos (columna BYTEA),
+// no se escribe nunca en el disco de Render.
 const upload = multer({ storage: multer.memoryStorage() });
-
-// --- Google Drive: subida de archivos (Foto DNI, etc.) ---
-
-let driveClient = null;
-
-function getDriveClient() {
-  if (driveClient) return driveClient;
-  const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentialsJson) {
-    throw new Error('Falta la variable de entorno GOOGLE_SERVICE_ACCOUNT_KEY');
-  }
-  const credentials = JSON.parse(credentialsJson);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/drive']
-  });
-  driveClient = google.drive({ version: 'v3', auth });
-  return driveClient;
-}
-
-async function subirArchivoADrive(file) {
-  const drive = getDriveClient();
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-  const bufferStream = new Readable();
-  bufferStream.push(file.buffer);
-  bufferStream.push(null);
-
-  const nombreArchivo = `${Date.now()}_${file.originalname}`.replace(/\s+/g, '_');
-
-  const { data } = await drive.files.create({
-    requestBody: {
-      name: nombreArchivo,
-      parents: folderId ? [folderId] : undefined
-    },
-    media: {
-      mimeType: file.mimetype,
-      body: bufferStream
-    },
-    fields: 'id, webViewLink'
-  });
-
-  // Permite que cualquiera con el enlace pueda VER el archivo (necesario para mostrarlo luego)
-  await drive.permissions.create({
-    fileId: data.id,
-    requestBody: { role: 'reader', type: 'anyone' }
-  });
-
-  return data.webViewLink;
-}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -209,10 +157,36 @@ app.get('/api/empleados', async (req, res) => {
 
 app.get('/api/personal', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM empleados ORDER BY nombre ASC');
+    // No traemos foto_dni_data (puede pesar varios MB) en la lista, solo si existe o no
+    const { rows } = await pool.query(
+      `SELECT id, usuario_id, nombre, dni, numero_seguridad_social, nacionalidad,
+              fecha_nacimiento, iban, domicilio, fecha_in, fecha_out, horas_alta,
+              punto_venta_id, email, estado, created_at,
+              (foto_dni_data IS NOT NULL) AS tiene_foto_dni
+       FROM empleados ORDER BY nombre ASC`
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/personal:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sirve el archivo de la Foto DNI guardado en la base de datos
+app.get('/api/personal/:id/foto-dni', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      'SELECT foto_dni_data, foto_dni_mime FROM empleados WHERE id = $1',
+      [id]
+    );
+    if (!rows[0] || !rows[0].foto_dni_data) {
+      return res.status(404).send('No hay foto de DNI para este empleado');
+    }
+    res.set('Content-Type', rows[0].foto_dni_mime || 'application/octet-stream');
+    res.send(rows[0].foto_dni_data);
+  } catch (err) {
+    console.error('Error GET /api/personal/:id/foto-dni:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -239,20 +213,18 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
     return res.status(400).json({ error: 'Falta el nombre del empleado' });
   }
 
-  try {
-    let fotoDniUrl = null;
-    if (req.file) {
-      fotoDniUrl = await subirArchivoADrive(req.file);
-    }
+  const fotoDniData = req.file ? req.file.buffer : null;
+  const fotoDniMime = req.file ? req.file.mimetype : null;
 
+  try {
     const { rows } = await pool.query(
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
          iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
-         email, foto_dni, estado)
+         email, foto_dni_data, foto_dni_mime, estado)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, TRUE))
-       RETURNING *`,
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, TRUE))
+       RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
         usuario_id || null,
         nombre,
@@ -267,7 +239,8 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
         horas_alta || null,
         punto_venta_id || null,
         email || null,
-        fotoDniUrl,
+        fotoDniData,
+        fotoDniMime,
         estado
       ]
     );

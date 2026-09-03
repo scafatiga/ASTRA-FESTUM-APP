@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const datos = await res.json();
 
             if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">No hay empleados registrados.</td></tr>`;
+                tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay empleados registrados.</td></tr>`;
                 return;
             }
 
@@ -51,6 +51,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(e.punto_venta_id)}</td>
                     <td class="p-3 text-gray-600">${formatearFecha(e.fecha_in)}</td>
                     <td class="p-3 text-gray-600">${formatearFecha(e.fecha_out)}</td>
+                    <td class="p-3">
+                        ${e.tiene_foto_dni
+                            ? `<a href="/api/personal/${e.id}/foto-dni" target="_blank" class="text-blue-600 hover:underline text-xs">Ver archivo</a>`
+                            : '<span class="text-gray-400 text-xs">-</span>'}
+                    </td>
                     <td class="p-3">
                         <span class="px-2 py-1 rounded text-xs font-semibold ${e.estado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
                             ${e.estado ? 'Activo' : 'No Activo'}
@@ -85,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } catch (err) {
             console.error(err);
-            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
         }
     }
 
