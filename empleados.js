@@ -26,7 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         CAMPOS_GESTORIA.forEach(id => {
             document.getElementById(id).required = activo;
         });
-        document.getElementById('fotoDni').required = activo;
+        actualizarRequeridoFotoDni();
+        if (!activo) document.getElementById('fotoDni').required = false;
     }
 
     checkboxGestoria.addEventListener('change', actualizarVisibilidadGestoria);
@@ -34,16 +35,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Validaciones ---
 
-    // NIE: letra (X/Y/Z) + 7 dígitos + letra de control
-    function validarNIE(valor) {
-        const nie = (valor || '').trim().toUpperCase();
-        if (!/^[XYZ]\d{7}[A-Z]$/.test(nie)) return false;
-        const mapaLetraInicial = { X: '0', Y: '1', Z: '2' };
-        const numero = mapaLetraInicial[nie[0]] + nie.slice(1, 8);
+    // Documento: acepta DNI (8 dígitos + letra) o NIE (letra X/Y/Z + 7 dígitos + letra),
+    // con la letra de control calculada de verdad, no solo el formato.
+    function validarDocumento(valor) {
+        const doc = (valor || '').trim().toUpperCase();
         const letras = 'TRWAGMYFPDXBNJZSQVHLCKE';
-        const letraEsperada = letras[parseInt(numero, 10) % 23];
-        return letraEsperada === nie[8];
+
+        if (/^[XYZ]\d{7}[A-Z]$/.test(doc)) {
+            const mapaLetraInicial = { X: '0', Y: '1', Z: '2' };
+            const numero = mapaLetraInicial[doc[0]] + doc.slice(1, 8);
+            const letraEsperada = letras[parseInt(numero, 10) % 23];
+            return { valido: letraEsperada === doc[8], tipo: 'NIE' };
+        }
+
+        if (/^\d{8}[A-Z]$/.test(doc)) {
+            const numero = doc.slice(0, 8);
+            const letraEsperada = letras[parseInt(numero, 10) % 23];
+            return { valido: letraEsperada === doc[8], tipo: 'DNI' };
+        }
+
+        return { valido: false, tipo: null };
     }
+
+    // La Foto DNI solo es obligatoria si el documento introducido es un NIE
+    function actualizarRequeridoFotoDni() {
+        if (!checkboxGestoria.checked) return; // el bloque entero está oculto, no aplica
+        const { tipo } = validarDocumento(document.getElementById('dni').value);
+        document.getElementById('fotoDni').required = (tipo === 'NIE');
+    }
+
+    document.getElementById('dni').addEventListener('input', actualizarRequeridoFotoDni);
 
     // Nº Seguridad Social: exactamente 12 dígitos
     function validarSegSocial(valor) {
@@ -189,7 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const segSocial = document.getElementById('numeroSegSocial').value.trim();
                 const iban = document.getElementById('iban').value.trim();
 
-                const dniValido = validarNIE(dni);
+                const { valido: dniValido, tipo: tipoDocumento } = validarDocumento(dni);
                 const segSocialValido = validarSegSocial(segSocial);
                 const ibanValido = validarIBAN(iban);
 
@@ -197,8 +218,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 mostrarError('numeroSegSocial', 'segSocialError', segSocialValido);
                 mostrarError('iban', 'ibanError', ibanValido);
 
-                if (!dniValido || !segSocialValido || !ibanValido) {
-                    return; // no envía el formulario hasta que los 3 campos sean válidos
+                // Foto DNI solo obligatoria si es NIE
+                const fotoDniInput = document.getElementById('fotoDni');
+                fotoDniInput.required = (tipoDocumento === 'NIE');
+                const fotoDniValida = !fotoDniInput.required || fotoDniInput.files.length > 0;
+                if (!fotoDniValida) fotoDniInput.reportValidity();
+
+                if (!dniValido || !segSocialValido || !ibanValido || !fotoDniValida) {
+                    return; // no envía el formulario hasta que todo sea válido
                 }
             }
 
