@@ -1,31 +1,36 @@
 // Astra Festum - Shell de navegación compartido (barra superior + menú + barra inferior)
 (function () {
     // Los 5 accesos "más usados", fijos abajo (igual que la app de AppSheet).
-    // Los href apuntan a páginas que iremos construyendo; de momento muestran "en construcción".
+    // "permiso" es la clave que debe estar en TRUE en los permisos del usuario para verlo.
     const BOTTOM_ITEMS = [
         {
             label: 'Registro Ventas',
             href: '/cierre.html',
+            permiso: 'cierre',
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/></svg>'
         },
         {
             label: 'In-Out',
             href: '/inout.html',
+            permiso: 'inout',
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>'
         },
         {
             label: 'Socios',
             href: '/socios.html',
+            permiso: 'socios',
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
         },
         {
             label: 'Ingresos',
             href: '/ingresos.html',
+            permiso: 'ingresos',
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v6h-6"/></svg>'
         },
         {
             label: 'Gastos Tarjeta',
             href: '/gastos-tarjeta.html',
+            permiso: 'gastos_tarjeta',
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>'
         }
     ];
@@ -33,17 +38,18 @@
     // Todo lo que ya está construido vive en el menú lateral (☰), para no mezclarlo
     // con los 5 accesos de arriba, que replican tal cual la barra de AppSheet.
     const MENU_ITEMS = [
-        { label: 'Histórico de Cierres', href: '/historico.html' },
-        { label: 'Puntos de Venta', href: '/puntos-venta.html' },
-        { label: 'Proveedores', href: '/proveedores.html' },
-        { label: 'Empleados', href: '/empleados.html' }
+        { label: 'Histórico de Cierres', href: '/historico.html', permiso: 'historico' },
+        { label: 'Puntos de Venta', href: '/puntos-venta.html', permiso: 'puntos_venta' },
+        { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
+        { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },
+        { label: 'Usuarios', href: '/usuarios.html', permiso: 'usuarios' }
     ];
 
     function rutaActual() {
         return window.location.pathname;
     }
 
-    function construirBarraSuperior() {
+    function construirBarraSuperior(usuario) {
         const topbar = document.createElement('div');
         topbar.className = 'af-topbar';
         topbar.innerHTML = `
@@ -56,6 +62,9 @@
         `;
         document.body.prepend(topbar);
 
+        const permisos = (usuario && usuario.permisos) || {};
+        const itemsVisibles = MENU_ITEMS.filter(item => permisos[item.permiso]);
+
         const overlay = document.createElement('div');
         overlay.id = 'afMenuOverlay';
         overlay.className = 'af-menu-overlay';
@@ -66,8 +75,12 @@
                     <button id="afMenuClose" aria-label="Cerrar menú">✕</button>
                 </div>
                 <nav class="af-menu-list">
-                    ${MENU_ITEMS.map(item => `<a href="${item.href}" class="af-menu-link${rutaActual() === item.href ? ' active' : ''}">${item.label}</a>`).join('')}
+                    ${itemsVisibles.map(item => `<a href="${item.href}" class="af-menu-link${rutaActual() === item.href ? ' active' : ''}">${item.label}</a>`).join('')}
                 </nav>
+                <div class="af-menu-footer">
+                    ${usuario ? `<div class="af-menu-usuario">${usuario.nombre}<br><span>${usuario.email}</span></div>` : ''}
+                    <button id="afLogoutBtn" class="af-logout-btn">Cerrar sesión</button>
+                </div>
             </div>
         `;
         document.body.appendChild(overlay);
@@ -77,12 +90,24 @@
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) overlay.classList.remove('open');
         });
+        document.getElementById('afLogoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } catch (err) {
+                console.error('Error al cerrar sesión:', err);
+            }
+            window.location.href = '/login.html';
+        });
     }
 
-    function construirBarraInferior() {
+    function construirBarraInferior(usuario) {
+        const permisos = (usuario && usuario.permisos) || {};
+        const itemsVisibles = BOTTOM_ITEMS.filter(item => permisos[item.permiso]);
+        if (itemsVisibles.length === 0) return;
+
         const nav = document.createElement('nav');
         nav.className = 'af-bottom-nav';
-        nav.innerHTML = BOTTOM_ITEMS.map(item => {
+        nav.innerHTML = itemsVisibles.map(item => {
             const activo = rutaActual() === item.href;
             return `
                 <a href="${item.href}" class="af-bottom-item${activo ? ' active' : ''}">
@@ -94,9 +119,17 @@
         document.body.appendChild(nav);
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        construirBarraSuperior();
-        construirBarraInferior();
+    document.addEventListener('DOMContentLoaded', async () => {
+        let usuario = null;
+        try {
+            const res = await fetch('/api/me');
+            if (res.ok) usuario = await res.json();
+        } catch (err) {
+            console.error('Error al cargar el usuario actual:', err);
+        }
+
+        construirBarraSuperior(usuario);
+        construirBarraInferior(usuario);
         document.body.classList.add('af-has-shell');
     });
 })();

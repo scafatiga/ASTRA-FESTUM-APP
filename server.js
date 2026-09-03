@@ -7,6 +7,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { Resend } from 'resend';
+import bcrypt from 'bcryptjs';
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 
 dotenv.config();
 
@@ -15,10 +18,146 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// La base de datos se conecta antes que nada: la necesitan tanto las rutas
+// normales como el guardado de sesiones de login.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// Render está detrás de un proxy; hace falta para que las cookies "secure" funcionen bien.
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// --- Sesión de login ("recuérdame" 30 días, persistida en la base de datos) ---
+const PgSession = connectPgSimple(session);
+
+app.use(session({
+  store: new PgSession({ pool, createTableIfMissing: true }),
+  secret: process.env.SESSION_SECRET || 'astra-festum-cambia-esta-clave',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 días
+  }
+}));
+
+// --- Control de acceso: qué pestaña necesita qué permiso ---
+const PAGE_PERMISOS = {
+  '/cierre.html': 'cierre',
+  '/historico.html': 'historico',
+  '/inout.html': 'inout',
+  '/socios.html': 'socios',
+  '/ingresos.html': 'ingresos',
+  '/gastos-tarjeta.html': 'gastos_tarjeta',
+  '/puntos-venta.html': 'puntos_venta',
+  '/proveedores.html': 'proveedores',
+  '/empleados.html': 'empleados',
+  '/usuarios.html': 'usuarios'
+};
+
+const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
+
+function requireAuth(req, res, next) {
+  if (!req.session || !req.session.usuario) {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+  next();
+}
+
+function requirePermiso(tab) {
+  return (req, res, next) => {
+    if (!req.session || !req.session.usuario) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+    if (!req.session.usuario.permisos || !req.session.usuario.permisos[tab]) {
+      return res.status(403).json({ error: 'No tienes acceso a esta sección' });
+    }
+    next();
+  };
+}
+
+// Puerta de entrada para las páginas HTML: sin sesión, todo redirige a /login.html;
+// con sesión, cada página exige el permiso que le corresponda (si tiene uno asignado).
+app.use((req, res, next) => {
+  if (PUBLIC_PATHS.has(req.path) || req.path.startsWith('/api/')) return next();
+
+  const autenticado = !!(req.session && req.session.usuario);
+  if (!autenticado) {
+    if (req.path === '/' || req.path.endsWith('.html')) {
+      return res.redirect('/login.html');
+    }
+    return res.status(401).send('No autenticado');
+  }
+
+  const permisoRequerido = PAGE_PERMISOS[req.path];
+  if (permisoRequerido && !req.session.usuario.permisos[permisoRequerido]) {
+    return res.status(403).send('No tienes acceso a esta sección.');
+  }
+
+  next();
+});
+
 app.use(express.static(path.join(__dirname)));
+
+// --- Login / Logout / Sesión actual ---
+
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Faltan email o contraseña' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nombre, email, permisos, activo, password_hash FROM usuarios WHERE email = $1',
+      [email.trim().toLowerCase()]
+    );
+    const usuario = rows[0];
+
+    if (!usuario || !usuario.password_hash) {
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    }
+    if (!usuario.activo) {
+      return res.status(403).json({ error: 'Este usuario está desactivado' });
+    }
+
+    const coincide = await bcrypt.compare(password, usuario.password_hash);
+    if (!coincide) {
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    }
+
+    req.session.usuario = {
+      id: usuario.id,
+      nombre: usuario.nombre,
+      email: usuario.email,
+      permisos: usuario.permisos || {}
+    };
+
+    res.json({ ok: true, usuario: req.session.usuario });
+  } catch (err) {
+    console.error('Error POST /api/login:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+app.get('/api/me', (req, res) => {
+  if (!req.session || !req.session.usuario) {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+  res.json(req.session.usuario);
+});
 
 // Multer en memoria: el archivo se guarda directo en la base de datos (columna BYTEA),
 // no se escribe nunca en el disco de Render.
@@ -91,14 +230,9 @@ Gabriel Scafati
   }
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
-
 // --- PUNTOS DE VENTA ---
 
-app.get('/api/puntos-venta', async (req, res) => {
+app.get('/api/puntos-venta', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM puntos_venta WHERE activo = TRUE ORDER BY nombre ASC');
     res.json(rows);
@@ -107,7 +241,7 @@ app.get('/api/puntos-venta', async (req, res) => {
   }
 });
 
-app.get('/api/puntos-venta/todos', async (req, res) => {
+app.get('/api/puntos-venta/todos', requirePermiso('puntos_venta'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM puntos_venta ORDER BY nombre ASC');
     res.json(rows);
@@ -116,7 +250,7 @@ app.get('/api/puntos-venta/todos', async (req, res) => {
   }
 });
 
-app.post('/api/puntos-venta', async (req, res) => {
+app.post('/api/puntos-venta', requirePermiso('puntos_venta'), async (req, res) => {
   const { nombre, direccion, tipo_stand } = req.body;
   try {
     const { rows } = await pool.query(
@@ -129,7 +263,7 @@ app.post('/api/puntos-venta', async (req, res) => {
   }
 });
 
-app.patch('/api/puntos-venta/:id/estado', async (req, res) => {
+app.patch('/api/puntos-venta/:id/estado', requirePermiso('puntos_venta'), async (req, res) => {
   const { id } = req.params;
   const { activo } = req.body;
   try {
@@ -145,7 +279,7 @@ app.patch('/api/puntos-venta/:id/estado', async (req, res) => {
 
 // --- CIERRES ---
 
-app.get('/api/cierres', async (req, res) => {
+app.get('/api/cierres', requirePermiso('historico'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM cierres ORDER BY id DESC');
     res.json(rows);
@@ -155,7 +289,7 @@ app.get('/api/cierres', async (req, res) => {
   }
 });
 
-app.post('/api/cierres', async (req, res) => {
+app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
   const {
     fecha,
     punto_venta,
@@ -201,9 +335,12 @@ app.post('/api/cierres', async (req, res) => {
 
 // --- USUARIOS / EMPLEADOS (cuentas de acceso, tabla "usuarios") ---
 
-app.get('/api/usuarios', async (req, res) => {
+app.get('/api/usuarios', requirePermiso('usuarios'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
+    // Nunca se devuelve password_hash, ni aquí ni en ninguna otra respuesta.
+    const { rows } = await pool.query(
+      `SELECT id, nombre, email, permisos, activo, creado_en FROM usuarios ORDER BY nombre ASC`
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/usuarios:', err.message);
@@ -211,9 +348,148 @@ app.get('/api/usuarios', async (req, res) => {
   }
 });
 
-app.get('/api/empleados', async (req, res) => {
+app.get('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
+  const { id } = req.params;
   try {
-    const { rows } = await pool.query('SELECT * FROM usuarios ORDER BY id ASC');
+    const { rows } = await pool.query(
+      `SELECT id, nombre, email, permisos, activo, creado_en FROM usuarios WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/usuarios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/usuarios', requirePermiso('usuarios'), async (req, res) => {
+  const { nombre, email, password, permisos } = req.body;
+
+  if (!nombre || !email || !password) {
+    return res.status(400).json({ error: 'Nombre, email y contraseña son obligatorios' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { rows } = await pool.query(
+      `INSERT INTO usuarios (empresa_id, nombre, email, password_hash, permisos, activo)
+       VALUES (
+         (SELECT empresa_id FROM usuarios WHERE id = $1),
+         $2, $3, $4, $5::jsonb, TRUE
+       )
+       RETURNING id, nombre, email, permisos, activo, creado_en`,
+      [req.session.usuario.id, nombre, email.trim().toLowerCase(), passwordHash, JSON.stringify(permisos || {})]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') { // email duplicado
+      return res.status(400).json({ error: 'Ya existe un usuario con ese email' });
+    }
+    console.error('Error POST /api/usuarios:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
+  const { id } = req.params;
+  const { nombre, email, password, permisos } = req.body;
+
+  if (!nombre || !email) {
+    return res.status(400).json({ error: 'Nombre y email son obligatorios' });
+  }
+
+  // No te puedes quitar a ti mismo el acceso a la pestaña Usuarios (evita quedarte fuera).
+  if (id === req.session.usuario.id && permisos && permisos.usuarios !== true) {
+    return res.status(400).json({ error: 'No puedes quitarte a ti mismo el acceso a Usuarios' });
+  }
+
+  try {
+    let rows;
+    if (password) {
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+      ({ rows } = await pool.query(
+        `UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb, password_hash=$4
+         WHERE id=$5
+         RETURNING id, nombre, email, permisos, activo, creado_en`,
+        [nombre, email.trim().toLowerCase(), JSON.stringify(permisos || {}), passwordHash, id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb
+         WHERE id=$4
+         RETURNING id, nombre, email, permisos, activo, creado_en`,
+        [nombre, email.trim().toLowerCase(), JSON.stringify(permisos || {}), id]
+      ));
+    }
+
+    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Si te has editado a ti mismo, refresca tus permisos en la sesión activa
+    if (id === req.session.usuario.id) {
+      req.session.usuario.nombre = rows[0].nombre;
+      req.session.usuario.email = rows[0].email;
+      req.session.usuario.permisos = rows[0].permisos;
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Ya existe un usuario con ese email' });
+    }
+    console.error('Error PUT /api/usuarios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/usuarios/:id/estado', requirePermiso('usuarios'), async (req, res) => {
+  const { id } = req.params;
+  const { activo } = req.body;
+
+  if (id === req.session.usuario.id) {
+    return res.status(400).json({ error: 'No puedes desactivar tu propio usuario' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'UPDATE usuarios SET activo = $1 WHERE id = $2 RETURNING id, nombre, email, permisos, activo',
+      [activo, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PATCH /api/usuarios/:id/estado:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.session.usuario.id) {
+    return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
+  }
+
+  try {
+    await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/usuarios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/empleados', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nombre, email, activo FROM usuarios WHERE activo = TRUE ORDER BY nombre ASC'
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/empleados:', err.message);
@@ -223,7 +499,7 @@ app.get('/api/empleados', async (req, res) => {
 
 // --- PERSONAL (ficha completa de empleado, tabla "empleados") ---
 
-app.get('/api/personal', async (req, res) => {
+app.get('/api/personal', requirePermiso('empleados'), async (req, res) => {
   try {
     // No traemos foto_dni_data (puede pesar varios MB) en la lista, solo si existe o no
     const { rows } = await pool.query(
@@ -242,7 +518,7 @@ app.get('/api/personal', async (req, res) => {
 
 // Sirve el archivo de la Foto DNI guardado en la base de datos.
 // Con ?download=1 fuerza la descarga en vez de abrirlo en el navegador.
-app.get('/api/personal/:id/foto-dni', async (req, res) => {
+app.get('/api/personal/:id/foto-dni', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
@@ -268,7 +544,7 @@ app.get('/api/personal/:id/foto-dni', async (req, res) => {
   }
 });
 
-app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
+app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'), async (req, res) => {
   const {
     usuario_id,
     nombre,
@@ -359,7 +635,7 @@ app.post('/api/personal', upload.single('fotoDni'), async (req, res) => {
   }
 });
 
-app.patch('/api/personal/:id/estado', async (req, res) => {
+app.patch('/api/personal/:id/estado', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   const { estado } = req.body;
   try {
@@ -375,7 +651,7 @@ app.patch('/api/personal/:id/estado', async (req, res) => {
 });
 
 // Obtener la ficha completa de un empleado (para el modal de Detalle/Editar)
-app.get('/api/personal/:id', async (req, res) => {
+app.get('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
@@ -396,7 +672,7 @@ app.get('/api/personal/:id', async (req, res) => {
 
 // Editar un empleado. Si se adjunta un archivo nuevo, sustituye la Foto DNI;
 // si no, se conserva la que ya hubiera.
-app.put('/api/personal/:id', upload.single('fotoDni'), async (req, res) => {
+app.put('/api/personal/:id', requirePermiso('empleados'), upload.single('fotoDni'), async (req, res) => {
   const { id } = req.params;
   const {
     usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
@@ -447,7 +723,7 @@ app.put('/api/personal/:id', upload.single('fotoDni'), async (req, res) => {
 });
 
 // Eliminar un empleado
-app.delete('/api/personal/:id', async (req, res) => {
+app.delete('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM empleados WHERE id = $1', [id]);
@@ -460,7 +736,7 @@ app.delete('/api/personal/:id', async (req, res) => {
 
 // --- PROVEEDORES ---
 
-app.get('/api/proveedores', async (req, res) => {
+app.get('/api/proveedores', requirePermiso('proveedores'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM proveedores WHERE activo = TRUE ORDER BY nombre_proveedor ASC');
     res.json(rows);
@@ -470,7 +746,7 @@ app.get('/api/proveedores', async (req, res) => {
   }
 });
 
-app.get('/api/proveedores/todos', async (req, res) => {
+app.get('/api/proveedores/todos', requirePermiso('proveedores'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM proveedores ORDER BY nombre_proveedor ASC');
     res.json(rows);
@@ -480,7 +756,7 @@ app.get('/api/proveedores/todos', async (req, res) => {
   }
 });
 
-app.post('/api/proveedores', async (req, res) => {
+app.post('/api/proveedores', requirePermiso('proveedores'), async (req, res) => {
   const {
     nombre_proveedor,
     nombre_comercial,
@@ -523,7 +799,7 @@ app.post('/api/proveedores', async (req, res) => {
   }
 });
 
-app.patch('/api/proveedores/:id/estado', async (req, res) => {
+app.patch('/api/proveedores/:id/estado', requirePermiso('proveedores'), async (req, res) => {
   const { id } = req.params;
   const { activo } = req.body;
   try {
@@ -539,7 +815,7 @@ app.patch('/api/proveedores/:id/estado', async (req, res) => {
 });
 
 // Obtener un proveedor (para Detalle/Editar)
-app.get('/api/proveedores/:id', async (req, res) => {
+app.get('/api/proveedores/:id', requirePermiso('proveedores'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query('SELECT * FROM proveedores WHERE id = $1', [id]);
@@ -552,7 +828,7 @@ app.get('/api/proveedores/:id', async (req, res) => {
 });
 
 // Editar un proveedor
-app.put('/api/proveedores/:id', async (req, res) => {
+app.put('/api/proveedores/:id', requirePermiso('proveedores'), async (req, res) => {
   const { id } = req.params;
   const {
     nombre_proveedor, nombre_comercial, cif, iban,
@@ -585,7 +861,7 @@ app.put('/api/proveedores/:id', async (req, res) => {
 });
 
 // Eliminar un proveedor
-app.delete('/api/proveedores/:id', async (req, res) => {
+app.delete('/api/proveedores/:id', requirePermiso('proveedores'), async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM proveedores WHERE id = $1', [id]);
@@ -599,7 +875,7 @@ app.delete('/api/proveedores/:id', async (req, res) => {
 // --- INGRESOS ---
 
 // Lista, sin el archivo pesado (solo si tiene comprobante), de más nuevo a más antiguo
-app.get('/api/ingresos', async (req, res) => {
+app.get('/api/ingresos', requirePermiso('ingresos'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, fecha, importe, punto_venta_id, comprobante_nombre_original, created_at
@@ -614,7 +890,7 @@ app.get('/api/ingresos', async (req, res) => {
 });
 
 // Un ingreso completo (para Editar)
-app.get('/api/ingresos/:id', async (req, res) => {
+app.get('/api/ingresos/:id', requirePermiso('ingresos'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
@@ -632,7 +908,7 @@ app.get('/api/ingresos/:id', async (req, res) => {
 });
 
 // Descargar/ver el comprobante
-app.get('/api/ingresos/:id/comprobante', async (req, res) => {
+app.get('/api/ingresos/:id/comprobante', requirePermiso('ingresos'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
@@ -654,7 +930,7 @@ app.get('/api/ingresos/:id/comprobante', async (req, res) => {
   }
 });
 
-app.post('/api/ingresos', upload.single('comprobante'), async (req, res) => {
+app.post('/api/ingresos', requirePermiso('ingresos'), upload.single('comprobante'), async (req, res) => {
   const { fecha, importe, punto_venta_id } = req.body;
 
   if (!fecha || !importe || !punto_venta_id || !req.file) {
@@ -677,7 +953,7 @@ app.post('/api/ingresos', upload.single('comprobante'), async (req, res) => {
   }
 });
 
-app.put('/api/ingresos/:id', upload.single('comprobante'), async (req, res) => {
+app.put('/api/ingresos/:id', requirePermiso('ingresos'), upload.single('comprobante'), async (req, res) => {
   const { id } = req.params;
   const { fecha, importe, punto_venta_id } = req.body;
 
@@ -712,7 +988,7 @@ app.put('/api/ingresos/:id', upload.single('comprobante'), async (req, res) => {
   }
 });
 
-app.delete('/api/ingresos/:id', async (req, res) => {
+app.delete('/api/ingresos/:id', requirePermiso('ingresos'), async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM ingresos WHERE id = $1', [id]);

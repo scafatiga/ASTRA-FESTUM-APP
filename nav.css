@@ -148,3 +148,32 @@ body.af-has-shell {
 .af-bottom-item span.af-bottom-label {
     line-height: 1.1;
 }
+
+/* --- Pie del menú lateral: usuario + cerrar sesión --- */
+.af-menu-footer {
+    margin-top: auto;
+    padding: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+.af-menu-usuario {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 10px;
+}
+.af-menu-usuario span {
+    font-weight: 400;
+    color: #6b7280;
+}
+.af-logout-btn {
+    width: 100%;
+    background: #fee2e2;
+    color: #b91c1c;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.af-logout-btn:hover { background: #fecaca; }
