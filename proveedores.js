@@ -74,6 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return resto === 1;
     }
 
+    function formatearFechaHora(f) {
+        if (!f) return '-';
+        const d = new Date(f);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
     function mostrarError(idCampo, idError, esValido) {
         const campo = document.getElementById(idCampo);
         const error = document.getElementById(idError);
@@ -206,7 +213,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ['Dirección Fiscal', p.direccion_fiscal],
             ['Teléfono', p.telefono],
             ['Email', p.email],
-            ['Estado', p.activo ? 'Activo' : 'Inactivo']
+            ['Estado', p.activo ? 'Activo' : 'Inactivo'],
+            ['Registrado por', p.registrado_por_nombre
+                ? `${p.registrado_por_nombre} — ${formatearFechaHora(p.created_at)}`
+                : '-']
         ];
 
         document.getElementById('contenidoDetalle').innerHTML = filas.map(([label, valor]) => `

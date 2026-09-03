@@ -213,6 +213,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return d.toLocaleDateString('es-ES');
     }
 
+    function formatearFechaHora(f) {
+        if (!f) return '-';
+        const d = new Date(f);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
     // --- Colapsar / expandir la lista ---
     const btnToggleLista = document.getElementById('btnToggleLista');
     const listaWrapper = document.getElementById('listaEmpleadosWrapper');
@@ -265,7 +272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     : 'No adjuntada'],
                 ['Acceso al sistema', e.tiene_acceso
                     ? `Sí (${PESTAÑAS.filter(p => e.permisos_acceso && e.permisos_acceso[p.clave]).map(p => p.label).join(', ') || 'sin pestañas marcadas'})`
-                    : 'No']
+                    : 'No'],
+                ['Registrado por', e.registrado_por_nombre
+                    ? `${e.registrado_por_nombre} — ${formatearFechaHora(e.created_at)}`
+                    : '-']
             ];
 
             document.getElementById('contenidoDetalle').innerHTML = filas.map(([label, valor]) => `

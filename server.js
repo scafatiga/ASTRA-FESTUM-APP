@@ -243,7 +243,12 @@ app.get('/api/puntos-venta', requireAuth, async (req, res) => {
 
 app.get('/api/puntos-venta/todos', requirePermiso('puntos_venta'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM puntos_venta ORDER BY nombre ASC');
+    const { rows } = await pool.query(
+      `SELECT pv.*, u.nombre AS registrado_por_nombre
+       FROM puntos_venta pv
+       LEFT JOIN usuarios u ON u.id = pv.registrado_por
+       ORDER BY pv.nombre ASC`
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -254,8 +259,8 @@ app.post('/api/puntos-venta', requirePermiso('puntos_venta'), async (req, res) =
   const { nombre, direccion, tipo_stand } = req.body;
   try {
     const { rows } = await pool.query(
-      'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, activo) VALUES ($1, $2, $3, TRUE) RETURNING *',
-      [nombre, direccion || null, tipo_stand || null]
+      'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, activo, registrado_por) VALUES ($1, $2, $3, TRUE, $4) RETURNING *',
+      [nombre, direccion || null, tipo_stand || null, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -281,7 +286,12 @@ app.patch('/api/puntos-venta/:id/estado', requirePermiso('puntos_venta'), async 
 
 app.get('/api/cierres', requirePermiso('historico'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM cierres ORDER BY id DESC');
+    const { rows } = await pool.query(
+      `SELECT c.*, u.nombre AS registrado_por_nombre
+       FROM cierres c
+       LEFT JOIN usuarios u ON u.id = c.registrado_por
+       ORDER BY c.id DESC`
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/cierres:', err.message);
@@ -312,9 +322,9 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO cierres
-        (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos)
+        (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por)
        VALUES
-        (COALESCE($1, NOW()), $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+        (COALESCE($1, NOW()), $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
        RETURNING *`,
       [
         fecha || null,
@@ -323,7 +333,8 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
         total_tarjeta || 0,
         observaciones || '',
         gastosJson,
-        adelantosJson
+        adelantosJson,
+        req.session.usuario.id
       ]
     );
     res.json(rows[0]);
@@ -418,9 +429,11 @@ app.get('/api/personal', requirePermiso('empleados'), async (req, res) => {
               e.fecha_nacimiento, e.iban, e.domicilio, e.fecha_in, e.fecha_out, e.horas_alta,
               e.punto_venta_id, e.email, e.estado, e.created_at,
               (e.foto_dni_data IS NOT NULL) AS tiene_foto_dni,
-              (e.usuario_id IS NOT NULL AND u.activo) AS tiene_acceso
+              (e.usuario_id IS NOT NULL AND u.activo) AS tiene_acceso,
+              creador.nombre AS registrado_por_nombre
        FROM empleados e
        LEFT JOIN usuarios u ON u.id = e.usuario_id
+       LEFT JOIN usuarios creador ON creador.id = e.registrado_por
        ORDER BY e.nombre ASC`
     );
     res.json(rows);
@@ -511,9 +524,9 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
          iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
-         email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, estado)
+         email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, estado, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::boolean, TRUE))
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::boolean, TRUE), $18)
        RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
         usuarioId,
@@ -532,7 +545,8 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
         fotoDniData,
         fotoDniMime,
         fotoDniNombreOriginal,
-        estado
+        estado,
+        req.session.usuario.id
       ]
     );
     const empleadoCreado = rows[0];
@@ -595,9 +609,11 @@ app.get('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
               e.punto_venta_id, e.email, e.estado, e.created_at,
               (e.foto_dni_data IS NOT NULL) AS tiene_foto_dni,
               (e.usuario_id IS NOT NULL AND u.activo) AS tiene_acceso,
-              u.permisos AS permisos_acceso
+              u.permisos AS permisos_acceso,
+              creador.nombre AS registrado_por_nombre
        FROM empleados e
        LEFT JOIN usuarios u ON u.id = e.usuario_id
+       LEFT JOIN usuarios creador ON creador.id = e.registrado_por
        WHERE e.id = $1`,
       [id]
     );
@@ -717,9 +733,29 @@ app.delete('/api/personal/:id', requirePermiso('empleados'), async (req, res) =>
 
 // --- PROVEEDORES ---
 
+// Lista ligera de proveedores (solo id + nombre), disponible para cualquier usuario logueado
+// -- la usan formularios de otras pestañas (Gastos Tarjeta, etc.) para el desplegable,
+// sin necesitar el permiso completo de gestión de Proveedores.
+app.get('/api/proveedores-dropdown', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nombre_proveedor FROM proveedores WHERE activo = TRUE ORDER BY nombre_proveedor ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/proveedores-dropdown:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/proveedores', requirePermiso('proveedores'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM proveedores WHERE activo = TRUE ORDER BY nombre_proveedor ASC');
+    const { rows } = await pool.query(
+      `SELECT p.*, u.nombre AS registrado_por_nombre
+       FROM proveedores p
+       LEFT JOIN usuarios u ON u.id = p.registrado_por
+       WHERE p.activo = TRUE ORDER BY p.nombre_proveedor ASC`
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/proveedores:', err.message);
@@ -729,7 +765,12 @@ app.get('/api/proveedores', requirePermiso('proveedores'), async (req, res) => {
 
 app.get('/api/proveedores/todos', requirePermiso('proveedores'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM proveedores ORDER BY nombre_proveedor ASC');
+    const { rows } = await pool.query(
+      `SELECT p.*, u.nombre AS registrado_por_nombre
+       FROM proveedores p
+       LEFT JOIN usuarios u ON u.id = p.registrado_por
+       ORDER BY p.nombre_proveedor ASC`
+    );
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/proveedores/todos:', err.message);
@@ -757,9 +798,9 @@ app.post('/api/proveedores', requirePermiso('proveedores'), async (req, res) => 
   try {
     const { rows } = await pool.query(
       `INSERT INTO proveedores
-        (nombre_proveedor, nombre_comercial, cif, iban, forma_pago, ciudad, direccion_fiscal, telefono, email)
+        (nombre_proveedor, nombre_comercial, cif, iban, forma_pago, ciudad, direccion_fiscal, telefono, email, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         nombre_proveedor,
@@ -770,7 +811,8 @@ app.post('/api/proveedores', requirePermiso('proveedores'), async (req, res) => 
         ciudad || null,
         direccion_fiscal || null,
         telefono || null,
-        email || null
+        email || null,
+        req.session.usuario.id
       ]
     );
     res.json(rows[0]);
@@ -859,9 +901,11 @@ app.delete('/api/proveedores/:id', requirePermiso('proveedores'), async (req, re
 app.get('/api/ingresos', requirePermiso('ingresos'), async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, fecha, importe, punto_venta_id, comprobante_nombre_original, created_at
-       FROM ingresos
-       ORDER BY fecha DESC, created_at DESC`
+      `SELECT i.id, i.fecha, i.importe, i.punto_venta_id, i.comprobante_nombre_original, i.created_at,
+              u.nombre AS registrado_por_nombre
+       FROM ingresos i
+       LEFT JOIN usuarios u ON u.id = i.registrado_por
+       ORDER BY i.fecha DESC, i.created_at DESC`
     );
     res.json(rows);
   } catch (err) {
@@ -921,11 +965,11 @@ app.post('/api/ingresos', requirePermiso('ingresos'), upload.single('comprobante
   try {
     const { rows } = await pool.query(
       `INSERT INTO ingresos
-        (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original)
+        (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6)
+        ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, fecha, importe, punto_venta_id, comprobante_nombre_original`,
-      [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname]
+      [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -976,6 +1020,133 @@ app.delete('/api/ingresos/:id', requirePermiso('ingresos'), async (req, res) => 
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/ingresos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- GASTOS TARJETA ---
+
+app.get('/api/gastos-tarjeta', requirePermiso('gastos_tarjeta'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT g.id, g.fecha, g.proveedor_id, g.importe, g.punto_venta_id,
+              g.factura_nombre_original, g.created_at,
+              u.nombre AS registrado_por_nombre
+       FROM gastos_tarjeta g
+       LEFT JOIN usuarios u ON u.id = g.registrado_por
+       ORDER BY g.fecha DESC, g.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/gastos-tarjeta:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/gastos-tarjeta/:id', requirePermiso('gastos_tarjeta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, fecha, proveedor_id, importe, punto_venta_id, factura_nombre_original,
+              (factura_data IS NOT NULL) AS tiene_factura
+       FROM gastos_tarjeta WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Gasto no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/gastos-tarjeta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/gastos-tarjeta/:id/factura', requirePermiso('gastos_tarjeta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      'SELECT factura_data, factura_mime, factura_nombre_original FROM gastos_tarjeta WHERE id = $1',
+      [id]
+    );
+    if (!rows[0] || !rows[0].factura_data) {
+      return res.status(404).send('No hay factura para este gasto');
+    }
+    const { factura_data, factura_mime, factura_nombre_original } = rows[0];
+    res.set('Content-Type', factura_mime || 'application/octet-stream');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="${factura_nombre_original || `factura-${id}`}"`);
+    }
+    res.send(factura_data);
+  } catch (err) {
+    console.error('Error GET /api/gastos-tarjeta/:id/factura:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/gastos-tarjeta', requirePermiso('gastos_tarjeta'), upload.single('factura'), async (req, res) => {
+  const { fecha, proveedor_id, importe, punto_venta_id } = req.body;
+
+  if (!fecha || !proveedor_id || !importe || !punto_venta_id || !req.file) {
+    return res.status(400).json({ error: 'Fecha, proveedor, importe, punto de venta y factura son obligatorios' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO gastos_tarjeta
+        (fecha, proveedor_id, importe, punto_venta_id, factura_data, factura_mime, factura_nombre_original, registrado_por)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, fecha, proveedor_id, importe, punto_venta_id, factura_nombre_original`,
+      [fecha, proveedor_id, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/gastos-tarjeta:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/gastos-tarjeta/:id', requirePermiso('gastos_tarjeta'), upload.single('factura'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, proveedor_id, importe, punto_venta_id } = req.body;
+
+  if (!fecha || !proveedor_id || !importe || !punto_venta_id) {
+    return res.status(400).json({ error: 'Fecha, proveedor, importe y punto de venta son obligatorios' });
+  }
+
+  try {
+    let rows;
+    if (req.file) {
+      ({ rows } = await pool.query(
+        `UPDATE gastos_tarjeta SET
+           fecha=$1, proveedor_id=$2, importe=$3, punto_venta_id=$4,
+           factura_data=$5, factura_mime=$6, factura_nombre_original=$7
+         WHERE id=$8
+         RETURNING id`,
+        [fecha, proveedor_id, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE gastos_tarjeta SET fecha=$1, proveedor_id=$2, importe=$3, punto_venta_id=$4
+         WHERE id=$5
+         RETURNING id`,
+        [fecha, proveedor_id, importe, punto_venta_id, id]
+      ));
+    }
+    if (!rows[0]) return res.status(404).json({ error: 'Gasto no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/gastos-tarjeta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/gastos-tarjeta/:id', requirePermiso('gastos_tarjeta'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM gastos_tarjeta WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/gastos-tarjeta/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

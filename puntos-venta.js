@@ -2,6 +2,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('formPuntoVenta');
     const tabla = document.getElementById('tablaPuntosVenta');
 
+    function formatearFechaHora(f) {
+        if (!f) return '-';
+        const d = new Date(f);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
     async function cargarPuntosVenta() {
         try {
             const res = await fetch('/api/puntos-venta/todos');
@@ -9,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const datos = await res.json();
 
             if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay puntos de venta registrados.</td></tr>`;
+                tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay puntos de venta registrados.</td></tr>`;
                 return;
             }
 
@@ -22,6 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="px-2 py-1 rounded text-xs font-semibold ${pv.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
                             ${pv.activo ? 'Activo' : 'Inactivo'}
                         </span>
+                    </td>
+                    <td class="p-3 text-gray-500 text-xs">
+                        ${pv.registrado_por_nombre || '-'}<br>${formatearFechaHora(pv.creado_en)}
                     </td>
                     <td class="p-3">
                         <button data-id="${pv.id}" data-activo="${pv.activo}" class="btnToggleEstado text-xs px-3 py-1.5 rounded transition ${pv.activo ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}">
@@ -52,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             console.error(err);
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar los puntos de venta.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los puntos de venta.</td></tr>`;
         }
     }
 

@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cierres = await response.json();
 
         if (!cierres || cierres.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-gray-500">No hay cierres registrados.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-gray-500">No hay cierres registrados.</td></tr>`;
             return;
         }
 
@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
                     <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
                     <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
+                    <td class="p-3 text-gray-500 text-xs">${c.registrado_por_nombre || '-'}<br>${fechaFormateada}</td>
                     <td class="p-3">${detallesHtml}</td>
                 </tr>
             `;
@@ -88,6 +89,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     } catch (error) {
         console.error('Error:', error);
-        tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-500">Error al cargar los datos del histórico.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-red-500">Error al cargar los datos del histórico.</td></tr>`;
     }
 });

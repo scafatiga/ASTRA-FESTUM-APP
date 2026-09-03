@@ -31,6 +31,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return d.toLocaleDateString('es-ES');
     }
 
+    function formatearFechaHora(f) {
+        if (!f) return '-';
+        const d = new Date(f);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
     function formatearImporte(n) {
         return Number(n || 0).toFixed(2) + ' €';
     }
@@ -68,6 +75,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <a href="/api/ingresos/${i.id}/comprobante" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
                         <span class="text-gray-300">|</span>
                         <a href="/api/ingresos/${i.id}/comprobante?download=1" class="text-blue-600 hover:underline text-xs">Descargar</a>
+                    </td>
+                    <td class="p-3 text-gray-500 text-xs">
+                        ${i.registrado_por_nombre || '-'}<br>${formatearFechaHora(i.created_at)}
                     </td>
                     <td class="p-3">
                         <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${i.id}">
