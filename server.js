@@ -82,6 +82,16 @@ function requirePermiso(tab) {
   };
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.session || !req.session.usuario) {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+  if (!req.session.usuario.es_admin) {
+    return res.status(403).json({ error: 'Solo el administrador puede hacer esto' });
+  }
+  next();
+}
+
 // Puerta de entrada para las páginas HTML: sin sesión, todo redirige a /login.html;
 // con sesión, cada página exige el permiso que le corresponda (si tiene uno asignado).
 app.use((req, res, next) => {
@@ -115,7 +125,7 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, nombre, email, permisos, activo, password_hash FROM usuarios WHERE email = $1',
+      'SELECT id, nombre, email, permisos, activo, password_hash, es_admin FROM usuarios WHERE email = $1',
       [email.trim().toLowerCase()]
     );
     const usuario = rows[0];
@@ -136,7 +146,8 @@ app.post('/api/login', async (req, res) => {
       id: usuario.id,
       nombre: usuario.nombre,
       email: usuario.email,
-      permisos: usuario.permisos || {}
+      permisos: usuario.permisos || {},
+      es_admin: !!usuario.es_admin
     };
 
     res.json({ ok: true, usuario: req.session.usuario });
@@ -340,6 +351,62 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     console.error('Error POST /api/cierres:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Detalle / Editar / Eliminar un cierre — SOLO el administrador (no requiere permiso "cierre"
+// ni "historico" adicional: es_admin es la única puerta para estas 3 acciones)
+app.get('/api/cierres/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.*, u.nombre AS registrado_por_nombre
+       FROM cierres c
+       LEFT JOIN usuarios u ON u.id = c.registrado_por
+       WHERE c.id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Cierre no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/cierres/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/cierres/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { fecha, punto_venta, total_efectivo, total_tarjeta, observaciones } = req.body;
+
+  if (!punto_venta) {
+    return res.status(400).json({ error: 'Falta punto_venta en la petición' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE cierres SET
+         fecha = COALESCE($1, fecha), punto_venta = $2,
+         total_efectivo = $3, total_tarjeta = $4, observaciones = $5
+       WHERE id = $6
+       RETURNING *`,
+      [fecha || null, punto_venta, total_efectivo || 0, total_tarjeta || 0, observaciones || '', id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Cierre no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/cierres/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/cierres/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM cierres WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/cierres/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1147,6 +1214,105 @@ app.delete('/api/gastos-tarjeta/:id', requirePermiso('gastos_tarjeta'), async (r
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/gastos-tarjeta/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- SOCIOS ---
+
+const SOCIOS_VALIDOS = ['Gabriel', 'Wilson', 'Diana', 'Fernando'];
+const TIPOS_SOCIO_VALIDOS = ['Pago de Gasto', 'Retiro Cash'];
+
+app.get('/api/socios', requirePermiso('socios'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.*, u.nombre AS registrado_por_nombre
+       FROM socios s
+       LEFT JOIN usuarios u ON u.id = s.registrado_por
+       ORDER BY s.fecha DESC, s.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/socios:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/socios/:id', requirePermiso('socios'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM socios WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Registro no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/socios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/socios', requirePermiso('socios'), async (req, res) => {
+  const { fecha, punto_venta_id, socio, tipo, importe, observaciones } = req.body;
+
+  if (!fecha || !punto_venta_id || !socio || !tipo || !importe) {
+    return res.status(400).json({ error: 'Fecha, punto de venta, socio, tipo e importe son obligatorios' });
+  }
+  if (!SOCIOS_VALIDOS.includes(socio)) {
+    return res.status(400).json({ error: 'Socio no válido' });
+  }
+  if (!TIPOS_SOCIO_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: 'Tipo no válido' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO socios (fecha, punto_venta_id, socio, tipo, importe, observaciones, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [fecha, punto_venta_id, socio, tipo, importe, observaciones || null, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/socios:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/socios/:id', requirePermiso('socios'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, punto_venta_id, socio, tipo, importe, observaciones } = req.body;
+
+  if (!fecha || !punto_venta_id || !socio || !tipo || !importe) {
+    return res.status(400).json({ error: 'Fecha, punto de venta, socio, tipo e importe son obligatorios' });
+  }
+  if (!SOCIOS_VALIDOS.includes(socio)) {
+    return res.status(400).json({ error: 'Socio no válido' });
+  }
+  if (!TIPOS_SOCIO_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: 'Tipo no válido' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE socios SET fecha=$1, punto_venta_id=$2, socio=$3, tipo=$4, importe=$5, observaciones=$6
+       WHERE id=$7
+       RETURNING *`,
+      [fecha, punto_venta_id, socio, tipo, importe, observaciones || null, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Registro no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/socios/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/socios/:id', requirePermiso('socios'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM socios WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/socios/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
