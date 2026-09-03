@@ -6,7 +6,7 @@ const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 dotenv.config();
 
@@ -26,20 +26,16 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // --- Envío de email a la Gestoría (checkbox en Alta de Empleado) ---
 
-let mailTransporter = null;
+let resendClient = null;
 
-function getMailTransporter() {
-  if (mailTransporter) return mailTransporter;
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) {
-    throw new Error('Faltan las variables de entorno GMAIL_USER o GMAIL_APP_PASSWORD');
+function getResendClient() {
+  if (resendClient) return resendClient;
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('Falta la variable de entorno RESEND_API_KEY');
   }
-  mailTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user, pass }
-  });
-  return mailTransporter;
+  resendClient = new Resend(apiKey);
+  return resendClient;
 }
 
 function formatearFechaEmail(f) {
@@ -50,8 +46,9 @@ function formatearFechaEmail(f) {
 }
 
 async function enviarEmailGestoria(empleado, puntoVenta, archivo) {
-  const transporter = getMailTransporter();
+  const resend = getResendClient();
   const destinatario = process.env.GESTORIA_EMAIL || 'gabrielscafati@yahoo.com';
+  const remitente = process.env.RESEND_FROM_EMAIL || 'Astra Festum <onboarding@resend.dev>';
 
   const cuerpo = `Hola, por favor tramitar alta en ASTRA FESTUM:
 
@@ -75,7 +72,7 @@ Gabriel Scafati
 `;
 
   const opciones = {
-    from: process.env.GMAIL_USER,
+    from: remitente,
     to: destinatario,
     subject: `Alta en ASTRA FESTUM - ${empleado.nombre}`,
     text: cuerpo
@@ -84,12 +81,14 @@ Gabriel Scafati
   if (archivo && archivo.buffer) {
     opciones.attachments = [{
       filename: archivo.originalname || 'foto-dni',
-      content: archivo.buffer,
-      contentType: archivo.mimetype
+      content: archivo.buffer
     }];
   }
 
-  await transporter.sendMail(opciones);
+  const { error } = await resend.emails.send(opciones);
+  if (error) {
+    throw new Error(error.message || JSON.stringify(error));
+  }
 }
 
 const pool = new Pool({
