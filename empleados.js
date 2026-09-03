@@ -33,6 +33,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkboxGestoria.addEventListener('change', actualizarVisibilidadGestoria);
     actualizarVisibilidadGestoria(); // estado inicial
 
+    // --- Permisos por pestaña (deben coincidir con PAGE_PERMISOS + los 5 de la barra inferior en server.js) ---
+    const PESTAÑAS = [
+        { clave: 'cierre', label: 'Registro Ventas / Cierre de Caja' },
+        { clave: 'historico', label: 'Histórico de Cierres' },
+        { clave: 'inout', label: 'In-Out' },
+        { clave: 'socios', label: 'Socios' },
+        { clave: 'ingresos', label: 'Ingresos' },
+        { clave: 'gastos_tarjeta', label: 'Gastos Tarjeta' },
+        { clave: 'puntos_venta', label: 'Puntos de Venta' },
+        { clave: 'proveedores', label: 'Proveedores' },
+        { clave: 'empleados', label: 'Empleados' }
+    ];
+
+    function pintarGridPermisos(contenedorId, valoresIniciales) {
+        const contenedor = document.getElementById(contenedorId);
+        contenedor.innerHTML = PESTAÑAS.map(p => `
+            <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" class="permiso-check" data-clave="${p.clave}" ${valoresIniciales && valoresIniciales[p.clave] ? 'checked' : ''}>
+                ${p.label}
+            </label>
+        `).join('');
+    }
+
+    function leerGridPermisos(contenedorId) {
+        const permisos = {};
+        document.querySelectorAll(`#${contenedorId} .permiso-check`).forEach(chk => {
+            permisos[chk.dataset.clave] = chk.checked;
+        });
+        return permisos;
+    }
+
+    pintarGridPermisos('permisosGrid', {});
+
+    // --- Mostrar/ocultar el bloque de "Dar acceso" (Alta) ---
+    const checkboxDarAcceso = document.getElementById('darAcceso');
+    const grupoAcceso = document.getElementById('grupoAcceso');
+
+    function actualizarVisibilidadAcceso() {
+        const activo = checkboxDarAcceso.checked;
+        if (activo) {
+            grupoAcceso.classList.remove('hidden');
+            grupoAcceso.classList.add('contents');
+        } else {
+            grupoAcceso.classList.remove('contents');
+            grupoAcceso.classList.add('hidden');
+        }
+        document.getElementById('accesoPassword').required = activo;
+        document.getElementById('accesoPasswordConfirmar').required = activo;
+    }
+    checkboxDarAcceso.addEventListener('change', actualizarVisibilidadAcceso);
+    actualizarVisibilidadAcceso();
+
+    // --- Mismo bloque, pero en el modal de Editar ---
+    const checkboxEditDarAcceso = document.getElementById('editDarAcceso');
+    const editGrupoAcceso = document.getElementById('editGrupoAcceso');
+
+    function actualizarVisibilidadAccesoEditar() {
+        editGrupoAcceso.classList.toggle('hidden', !checkboxEditDarAcceso.checked);
+    }
+    checkboxEditDarAcceso.addEventListener('change', actualizarVisibilidadAccesoEditar);
+
     // --- Validaciones ---
 
     // Documento: acepta DNI (8 dígitos + letra) o NIE (letra X/Y/Z + 7 dígitos + letra),
@@ -175,7 +236,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ['Estado', e.estado ? 'Activo' : 'Inactivo'],
                 ['Foto DNI', e.tiene_foto_dni
                     ? `<a href="/api/personal/${e.id}/foto-dni" target="_blank" class="text-blue-600 hover:underline">Ver archivo</a>`
-                    : 'No adjuntada']
+                    : 'No adjuntada'],
+                ['Acceso al sistema', e.tiene_acceso
+                    ? `Sí (${PESTAÑAS.filter(p => e.permisos_acceso && e.permisos_acceso[p.clave]).map(p => p.label).join(', ') || 'sin pestañas marcadas'})`
+                    : 'No']
             ];
 
             document.getElementById('contenidoDetalle').innerHTML = filas.map(([label, valor]) => `
@@ -228,6 +292,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('editSegSocialError').classList.add('hidden');
             document.getElementById('editIbanError').classList.add('hidden');
 
+            document.getElementById('editDarAcceso').checked = !!e.tiene_acceso;
+            document.getElementById('editAccesoPassword').value = '';
+            document.getElementById('editAccesoPasswordError').classList.add('hidden');
+            pintarGridPermisos('editPermisosGrid', e.permisos_acceso || {});
+            actualizarVisibilidadAccesoEditar();
+
             document.getElementById('modalEditar').classList.remove('hidden');
         } catch (err) {
             console.error(err);
@@ -263,6 +333,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (!valido) return;
 
+        // Validación del bloque de acceso
+        const editDarAccesoActivo = document.getElementById('editDarAcceso').checked;
+        const editPassword = document.getElementById('editAccesoPassword').value;
+        if (editDarAccesoActivo && editPassword && editPassword.length < 8) {
+            document.getElementById('editAccesoPasswordError').classList.remove('hidden');
+            return;
+        }
+        document.getElementById('editAccesoPasswordError').classList.add('hidden');
+
         const id = document.getElementById('editId').value;
         const formData = new FormData();
         formData.append('nombre', document.getElementById('editNombre').value.trim());
@@ -278,6 +357,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         formData.append('punto_venta_id', document.getElementById('editPuntoVenta').value || '');
         formData.append('email', document.getElementById('editEmail').value.trim());
         formData.append('estado', document.getElementById('editEstado').value);
+        formData.append('darAcceso', editDarAccesoActivo);
+        if (editDarAccesoActivo) {
+            if (editPassword) formData.append('password', editPassword);
+            formData.append('permisos', JSON.stringify(leerGridPermisos('editPermisosGrid')));
+        }
 
         const archivoFotoDni = document.getElementById('editFotoDni').files[0];
         if (archivoFotoDni) {
@@ -286,12 +370,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const res = await fetch(`/api/personal/${id}`, { method: 'PUT', body: formData });
-            if (!res.ok) throw new Error('Error al guardar los cambios');
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al guardar los cambios');
             document.getElementById('modalEditar').classList.add('hidden');
             cargarEmpleados();
         } catch (err) {
             console.error(err);
-            alert('No se pudo guardar el empleado.');
+            alert(err.message || 'No se pudo guardar el empleado.');
         }
     });
 
@@ -336,13 +421,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderizarTablaEmpleados(filtrarEmpleados(texto));
         } catch (err) {
             console.error(err);
-            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-500">Error al cargar los empleados.</td></tr>`;
         }
     }
 
     function renderizarTablaEmpleados(datos) {
         if (!datos || datos.length === 0) {
-            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay empleados que coincidan.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-gray-500">No hay empleados que coincidan.</td></tr>`;
             return;
         }
 
@@ -359,6 +444,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                <span class="text-gray-300">|</span>
                                <a href="/api/personal/${e.id}/foto-dni?download=1" class="text-blue-600 hover:underline text-xs">Descargar</a>`
                             : '<span class="text-gray-400 text-xs">-</span>'}
+                    </td>
+                    <td class="p-3">
+                        <span class="px-2 py-1 rounded text-xs font-semibold ${e.tiene_acceso ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}">
+                            ${e.tiene_acceso ? 'Sí' : 'No'}
+                        </span>
                     </td>
                     <td class="p-3">
                         <span class="px-2 py-1 rounded text-xs font-semibold ${e.estado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
@@ -435,12 +525,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
+            // Validación del bloque de acceso
+            const darAccesoActivo = document.getElementById('darAcceso').checked;
+            if (darAccesoActivo) {
+                const pass = document.getElementById('accesoPassword').value;
+                const passConfirmar = document.getElementById('accesoPasswordConfirmar').value;
+                if (pass.length < 8 || pass !== passConfirmar) {
+                    document.getElementById('accesoPasswordError').classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('accesoPasswordError').classList.add('hidden');
+            }
+
             const formData = new FormData();
             formData.append('nombre', nombre);
             formData.append('punto_venta_id', document.getElementById('puntoVenta').value || '');
             formData.append('email', document.getElementById('email').value.trim());
             formData.append('estado', document.getElementById('estado').value);
             formData.append('enviarGestoria', gestoriaActiva);
+            formData.append('darAcceso', darAccesoActivo);
+            if (darAccesoActivo) {
+                formData.append('password', document.getElementById('accesoPassword').value);
+                formData.append('permisos', JSON.stringify(leerGridPermisos('permisosGrid')));
+            }
 
             if (gestoriaActiva) {
                 formData.append('dni', document.getElementById('dni').value.trim());
@@ -465,9 +572,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     body: formData
                     // Sin header Content-Type: el navegador lo pone solo (multipart + boundary)
                 });
-                if (!res.ok) throw new Error('Error al crear empleado');
-
                 const resultado = await res.json();
+                if (!res.ok) throw new Error(resultado.error || 'Error al crear empleado');
+
                 if (gestoriaActiva) {
                     if (resultado.gestoria_enviada) {
                         alert('Empleado creado y email enviado a la Gestoría.');
@@ -478,10 +585,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 form.reset();
                 actualizarVisibilidadGestoria();
+                actualizarVisibilidadAcceso();
+                pintarGridPermisos('permisosGrid', {});
                 cargarEmpleados();
             } catch (err) {
                 console.error(err);
-                alert('No se pudo crear el empleado.');
+                alert(err.message || 'No se pudo crear el empleado.');
             }
         });
     }

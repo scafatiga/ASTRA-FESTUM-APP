@@ -57,8 +57,7 @@ const PAGE_PERMISOS = {
   '/gastos-tarjeta.html': 'gastos_tarjeta',
   '/puntos-venta.html': 'puntos_venta',
   '/proveedores.html': 'proveedores',
-  '/empleados.html': 'empleados',
-  '/usuarios.html': 'usuarios'
+  '/empleados.html': 'empleados'
 };
 
 const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
@@ -335,155 +334,8 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
 
 // --- USUARIOS / EMPLEADOS (cuentas de acceso, tabla "usuarios") ---
 
-app.get('/api/usuarios', requirePermiso('usuarios'), async (req, res) => {
-  try {
-    // Nunca se devuelve password_hash, ni aquí ni en ninguna otra respuesta.
-    const { rows } = await pool.query(
-      `SELECT id, nombre, email, permisos, activo, creado_en FROM usuarios ORDER BY nombre ASC`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error('Error GET /api/usuarios:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
-  const { id } = req.params;
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, nombre, email, permisos, activo, creado_en FROM usuarios WHERE id = $1`,
-      [id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Error GET /api/usuarios/:id:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/usuarios', requirePermiso('usuarios'), async (req, res) => {
-  const { nombre, email, password, permisos } = req.body;
-
-  if (!nombre || !email || !password) {
-    return res.status(400).json({ error: 'Nombre, email y contraseña son obligatorios' });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-  }
-
-  try {
-    const passwordHash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO usuarios (empresa_id, nombre, email, password_hash, permisos, activo)
-       VALUES (
-         (SELECT empresa_id FROM usuarios WHERE id = $1),
-         $2, $3, $4, $5::jsonb, TRUE
-       )
-       RETURNING id, nombre, email, permisos, activo, creado_en`,
-      [req.session.usuario.id, nombre, email.trim().toLowerCase(), passwordHash, JSON.stringify(permisos || {})]
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    if (err.code === '23505') { // email duplicado
-      return res.status(400).json({ error: 'Ya existe un usuario con ese email' });
-    }
-    console.error('Error POST /api/usuarios:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
-  const { id } = req.params;
-  const { nombre, email, password, permisos } = req.body;
-
-  if (!nombre || !email) {
-    return res.status(400).json({ error: 'Nombre y email son obligatorios' });
-  }
-
-  // No te puedes quitar a ti mismo el acceso a la pestaña Usuarios (evita quedarte fuera).
-  if (id === req.session.usuario.id && permisos && permisos.usuarios !== true) {
-    return res.status(400).json({ error: 'No puedes quitarte a ti mismo el acceso a Usuarios' });
-  }
-
-  try {
-    let rows;
-    if (password) {
-      if (password.length < 8) {
-        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-      }
-      const passwordHash = await bcrypt.hash(password, 10);
-      ({ rows } = await pool.query(
-        `UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb, password_hash=$4
-         WHERE id=$5
-         RETURNING id, nombre, email, permisos, activo, creado_en`,
-        [nombre, email.trim().toLowerCase(), JSON.stringify(permisos || {}), passwordHash, id]
-      ));
-    } else {
-      ({ rows } = await pool.query(
-        `UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb
-         WHERE id=$4
-         RETURNING id, nombre, email, permisos, activo, creado_en`,
-        [nombre, email.trim().toLowerCase(), JSON.stringify(permisos || {}), id]
-      ));
-    }
-
-    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-
-    // Si te has editado a ti mismo, refresca tus permisos en la sesión activa
-    if (id === req.session.usuario.id) {
-      req.session.usuario.nombre = rows[0].nombre;
-      req.session.usuario.email = rows[0].email;
-      req.session.usuario.permisos = rows[0].permisos;
-    }
-
-    res.json(rows[0]);
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'Ya existe un usuario con ese email' });
-    }
-    console.error('Error PUT /api/usuarios/:id:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch('/api/usuarios/:id/estado', requirePermiso('usuarios'), async (req, res) => {
-  const { id } = req.params;
-  const { activo } = req.body;
-
-  if (id === req.session.usuario.id) {
-    return res.status(400).json({ error: 'No puedes desactivar tu propio usuario' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      'UPDATE usuarios SET activo = $1 WHERE id = $2 RETURNING id, nombre, email, permisos, activo',
-      [activo, id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Error PATCH /api/usuarios/:id/estado:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/usuarios/:id', requirePermiso('usuarios'), async (req, res) => {
-  const { id } = req.params;
-
-  if (id === req.session.usuario.id) {
-    return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
-  }
-
-  try {
-    await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Error DELETE /api/usuarios/:id:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
+// La gestión de acceso (login + permisos) ahora vive dentro del alta/edición de Empleados,
+// no como pestaña separada. Ver /api/personal más abajo.
 
 app.get('/api/empleados', requireAuth, async (req, res) => {
   try {
@@ -499,15 +351,75 @@ app.get('/api/empleados', requireAuth, async (req, res) => {
 
 // --- PERSONAL (ficha completa de empleado, tabla "empleados") ---
 
+// Crea o actualiza la cuenta de acceso (tabla usuarios) ligada a un empleado.
+// Devuelve el usuario_id resultante (o null si no debe tener acceso).
+async function gestionarAccesoEmpleado({ usuarioIdExistente, nombre, email, password, permisosJson, darAcceso, creadorId, sessionUsuarioId }) {
+  const esUnoMismo = usuarioIdExistente && sessionUsuarioId && String(usuarioIdExistente) === String(sessionUsuarioId);
+
+  if (darAcceso !== 'true') {
+    if (usuarioIdExistente) {
+      if (esUnoMismo) {
+        throw new Error('No puedes quitarte el acceso a ti mismo');
+      }
+      await pool.query('UPDATE usuarios SET activo = FALSE WHERE id = $1', [usuarioIdExistente]);
+    }
+    return usuarioIdExistente || null;
+  }
+
+  const permisosObj = permisosJson ? JSON.parse(permisosJson) : {};
+
+  if (esUnoMismo && permisosObj.empleados !== true) {
+    throw new Error('No puedes quitarte a ti mismo el acceso a Empleados');
+  }
+
+  try {
+    if (usuarioIdExistente) {
+      if (password) {
+        const hash = await bcrypt.hash(password, 10);
+        await pool.query(
+          'UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb, activo=TRUE, password_hash=$4 WHERE id=$5',
+          [nombre, email, JSON.stringify(permisosObj), hash, usuarioIdExistente]
+        );
+      } else {
+        await pool.query(
+          'UPDATE usuarios SET nombre=$1, email=$2, permisos=$3::jsonb, activo=TRUE WHERE id=$4',
+          [nombre, email, JSON.stringify(permisosObj), usuarioIdExistente]
+        );
+      }
+      return usuarioIdExistente;
+    } else {
+      if (!password || password.length < 8) {
+        throw new Error('La contraseña debe tener al menos 8 caracteres');
+      }
+      const hash = await bcrypt.hash(password, 10);
+      const { rows } = await pool.query(
+        `INSERT INTO usuarios (empresa_id, nombre, email, password_hash, permisos, activo)
+         VALUES ((SELECT empresa_id FROM usuarios WHERE id = $1), $2, $3, $4, $5::jsonb, TRUE)
+         RETURNING id`,
+        [creadorId, nombre, email, hash, JSON.stringify(permisosObj)]
+      );
+      return rows[0].id;
+    }
+  } catch (err) {
+    if (err.code === '23505') {
+      throw new Error('Ya existe un usuario con ese email de acceso');
+    }
+    throw err;
+  }
+}
+
 app.get('/api/personal', requirePermiso('empleados'), async (req, res) => {
   try {
     // No traemos foto_dni_data (puede pesar varios MB) en la lista, solo si existe o no
     const { rows } = await pool.query(
-      `SELECT id, usuario_id, nombre, dni, numero_seguridad_social, nacionalidad,
-              fecha_nacimiento, iban, domicilio, fecha_in, fecha_out, horas_alta,
-              punto_venta_id, email, estado, created_at,
-              (foto_dni_data IS NOT NULL) AS tiene_foto_dni
-       FROM empleados ORDER BY nombre ASC`
+      `SELECT e.id, e.usuario_id, e.nombre, e.dni, e.numero_seguridad_social, e.nacionalidad,
+              e.fecha_nacimiento, e.iban, e.domicilio, e.fecha_in, e.fecha_out, e.horas_alta,
+              e.punto_venta_id, e.email, e.estado, e.created_at,
+              (e.foto_dni_data IS NOT NULL) AS tiene_foto_dni,
+              (e.usuario_id IS NOT NULL AND u.activo) AS tiene_acceso
+       FROM empleados e
+       LEFT JOIN usuarios u ON u.id = e.usuario_id
+       ORDER BY e.nombre ASC`
     );
     res.json(rows);
   } catch (err) {
@@ -546,7 +458,6 @@ app.get('/api/personal/:id/foto-dni', requirePermiso('empleados'), async (req, r
 
 app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'), async (req, res) => {
   const {
-    usuario_id,
     nombre,
     dni,
     numero_seguridad_social,
@@ -560,11 +471,17 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
     punto_venta_id,
     email,
     estado,
-    enviarGestoria
+    enviarGestoria,
+    darAcceso,
+    password,
+    permisos
   } = req.body;
 
   if (!nombre) {
     return res.status(400).json({ error: 'Falta el nombre del empleado' });
+  }
+  if (darAcceso === 'true' && !email) {
+    return res.status(400).json({ error: 'El email es obligatorio para dar acceso al sistema' });
   }
 
   const fotoDniData = req.file ? req.file.buffer : null;
@@ -572,6 +489,22 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
   const fotoDniNombreOriginal = req.file ? req.file.originalname : null;
 
   try {
+    let usuarioId = null;
+    try {
+      usuarioId = await gestionarAccesoEmpleado({
+        usuarioIdExistente: null,
+        nombre,
+        email: email ? email.trim().toLowerCase() : null,
+        password,
+        permisosJson: permisos,
+        darAcceso,
+        creadorId: req.session.usuario.id,
+        sessionUsuarioId: req.session.usuario.id
+      });
+    } catch (accesoErr) {
+      return res.status(400).json({ error: accesoErr.message });
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
@@ -581,7 +514,7 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::boolean, TRUE))
        RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
-        usuario_id || null,
+        usuarioId,
         nombre,
         dni || null,
         numero_seguridad_social || null,
@@ -655,11 +588,15 @@ app.get('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, usuario_id, nombre, dni, numero_seguridad_social, nacionalidad,
-              fecha_nacimiento, iban, domicilio, fecha_in, fecha_out, horas_alta,
-              punto_venta_id, email, estado, created_at,
-              (foto_dni_data IS NOT NULL) AS tiene_foto_dni
-       FROM empleados WHERE id = $1`,
+      `SELECT e.id, e.usuario_id, e.nombre, e.dni, e.numero_seguridad_social, e.nacionalidad,
+              e.fecha_nacimiento, e.iban, e.domicilio, e.fecha_in, e.fecha_out, e.horas_alta,
+              e.punto_venta_id, e.email, e.estado, e.created_at,
+              (e.foto_dni_data IS NOT NULL) AS tiene_foto_dni,
+              (e.usuario_id IS NOT NULL AND u.activo) AS tiene_acceso,
+              u.permisos AS permisos_acceso
+       FROM empleados e
+       LEFT JOIN usuarios u ON u.id = e.usuario_id
+       WHERE e.id = $1`,
       [id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Empleado no encontrado' });
@@ -671,25 +608,49 @@ app.get('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
 });
 
 // Editar un empleado. Si se adjunta un archivo nuevo, sustituye la Foto DNI;
-// si no, se conserva la que ya hubiera.
+// si no, se conserva la que ya hubiera. También crea/actualiza/revoca el acceso al sistema.
 app.put('/api/personal/:id', requirePermiso('empleados'), upload.single('fotoDni'), async (req, res) => {
   const { id } = req.params;
   const {
-    usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
-    iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id, email, estado
+    nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
+    iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id, email, estado,
+    darAcceso, password, permisos
   } = req.body;
 
   if (!nombre) {
     return res.status(400).json({ error: 'Falta el nombre del empleado' });
   }
-
-  const camposBase = [
-    usuario_id || null, nombre, dni || null, numero_seguridad_social || null, nacionalidad || null,
-    fecha_nacimiento || null, iban || null, domicilio || null, fecha_in || null, fecha_out || null,
-    horas_alta || null, punto_venta_id || null, email || null, estado
-  ];
+  if (darAcceso === 'true' && !email) {
+    return res.status(400).json({ error: 'El email es obligatorio para dar acceso al sistema' });
+  }
 
   try {
+    const actual = await pool.query('SELECT usuario_id FROM empleados WHERE id = $1', [id]);
+    if (!actual.rows[0]) return res.status(404).json({ error: 'Empleado no encontrado' });
+    const usuarioIdExistente = actual.rows[0].usuario_id;
+
+    let usuarioId;
+    try {
+      usuarioId = await gestionarAccesoEmpleado({
+        usuarioIdExistente,
+        nombre,
+        email: email ? email.trim().toLowerCase() : null,
+        password,
+        permisosJson: permisos,
+        darAcceso,
+        creadorId: req.session.usuario.id,
+        sessionUsuarioId: req.session.usuario.id
+      });
+    } catch (accesoErr) {
+      return res.status(400).json({ error: accesoErr.message });
+    }
+
+    const camposBase = [
+      usuarioId, nombre, dni || null, numero_seguridad_social || null, nacionalidad || null,
+      fecha_nacimiento || null, iban || null, domicilio || null, fecha_in || null, fecha_out || null,
+      horas_alta || null, punto_venta_id || null, email || null, estado
+    ];
+
     let rows;
     if (req.file) {
       ({ rows } = await pool.query(
@@ -715,6 +676,14 @@ app.put('/api/personal/:id', requirePermiso('empleados'), upload.single('fotoDni
     }
 
     if (!rows[0]) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+    // Si te has editado el acceso a ti mismo, refresca la sesión activa con tus nuevos datos
+    if (usuarioId && String(usuarioId) === String(req.session.usuario.id)) {
+      req.session.usuario.nombre = nombre;
+      req.session.usuario.email = email ? email.trim().toLowerCase() : req.session.usuario.email;
+      if (permisos) req.session.usuario.permisos = JSON.parse(permisos);
+    }
+
     res.json(rows[0]);
   } catch (err) {
     console.error('Error PUT /api/personal/:id:', err.message);
@@ -722,11 +691,21 @@ app.put('/api/personal/:id', requirePermiso('empleados'), upload.single('fotoDni
   }
 });
 
-// Eliminar un empleado
+// Eliminar un empleado (y desactivar su acceso al sistema si lo tenía)
 app.delete('/api/personal/:id', requirePermiso('empleados'), async (req, res) => {
   const { id } = req.params;
   try {
+    const actual = await pool.query('SELECT usuario_id FROM empleados WHERE id = $1', [id]);
+    const usuarioId = actual.rows[0] ? actual.rows[0].usuario_id : null;
+
+    if (usuarioId && String(usuarioId) === String(req.session.usuario.id)) {
+      return res.status(400).json({ error: 'No puedes eliminar tu propio empleado/usuario' });
+    }
+
     await pool.query('DELETE FROM empleados WHERE id = $1', [id]);
+    if (usuarioId) {
+      await pool.query('UPDATE usuarios SET activo = FALSE WHERE id = $1', [usuarioId]);
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/personal/:id:', err.message);

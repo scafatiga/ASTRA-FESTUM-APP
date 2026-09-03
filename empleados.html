@@ -99,6 +99,27 @@
                 </div>
             </div>
 
+            <!-- Acceso al sistema (independiente de Gestoría) -->
+            <div class="sm:col-span-2 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded p-3">
+                <input type="checkbox" id="darAcceso" class="w-4 h-4">
+                <label for="darAcceso" class="text-sm font-semibold text-gray-800">Dar acceso al sistema (login con el Email de arriba)</label>
+            </div>
+            <div id="grupoAcceso" class="hidden">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contraseña:</label>
+                    <input type="password" id="accesoPassword" minlength="8" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Confirmar Contraseña:</label>
+                    <input type="password" id="accesoPasswordConfirmar" minlength="8" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                    <p id="accesoPasswordError" class="text-xs text-red-600 mt-1 hidden">Las contraseñas no coinciden (o tienen menos de 8 caracteres).</p>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Acceso por pestaña:</label>
+                    <div id="permisosGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 border rounded p-3"></div>
+                </div>
+            </div>
+
             <div class="sm:col-span-2">
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
                     + Añadir Empleado
@@ -125,12 +146,13 @@
                         <th class="p-3">Fecha IN</th>
                         <th class="p-3">Fecha OUT</th>
                         <th class="p-3">Foto DNI</th>
+                        <th class="p-3">Acceso</th>
                         <th class="p-3">Estado</th>
                         <th class="p-3">Acción</th>
                     </tr>
                 </thead>
                 <tbody id="tablaEmpleados" class="divide-y text-sm">
-                    <tr><td colspan="8" class="p-4 text-center text-gray-500">Cargando...</td></tr>
+                    <tr><td colspan="9" class="p-4 text-center text-gray-500">Cargando...</td></tr>
                 </tbody>
             </table>
             </div>
@@ -222,6 +244,23 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">Foto DNI: <span class="text-xs font-normal text-gray-500">(déjalo vacío para conservar la actual)</span></label>
                     <input type="file" id="editFotoDni" accept="image/*,.pdf" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
                 </div>
+
+                <div class="sm:col-span-2 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded p-3">
+                    <input type="checkbox" id="editDarAcceso" class="w-4 h-4">
+                    <label for="editDarAcceso" class="text-sm font-semibold text-gray-800">Dar acceso al sistema (login con el Email de arriba)</label>
+                </div>
+                <div id="editGrupoAcceso" class="hidden sm:col-span-2 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nueva Contraseña: <span class="text-xs font-normal text-gray-500">(déjalo vacío para no cambiarla)</span></label>
+                        <input type="password" id="editAccesoPassword" minlength="8" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                        <p id="editAccesoPasswordError" class="text-xs text-red-600 mt-1 hidden">Mínimo 8 caracteres.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Acceso por pestaña:</label>
+                        <div id="editPermisosGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 border rounded p-3"></div>
+                    </div>
+                </div>
+
                 <div class="sm:col-span-2">
                     <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
                         Guardar Cambios
