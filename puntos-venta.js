@@ -46,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 font-medium text-gray-800">${pv.nombre || ''}</td>
                     <td class="p-3 text-gray-600">${pv.direccion || '-'}</td>
                     <td class="p-3 text-gray-600">${pv.tipo_stand || '-'}</td>
-                    <td class="p-3">${pv.universal ? '<span class="text-emerald-600 font-semibold">Sí</span>' : '-'}</td>
                     <td class="p-3">
                         <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${pv.activo ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${pv.id}" data-activo="${pv.activo}">
                             ${pv.activo ? 'Activo' : 'Inactivo'}

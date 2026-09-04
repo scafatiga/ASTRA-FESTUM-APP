@@ -92,9 +92,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white'
                         : 'bg-emerald-500 hover:bg-emerald-600 border-emerald-500 text-white';
                 return `
-                    <button type="button" class="emp-btn h-16 flex flex-col items-center justify-center text-center px-2 rounded-lg text-xs font-medium border transition ${colorClase}" data-id="${e.id}" data-accion="${e.proxima_accion}" ${!e.puede_ficharlo ? 'disabled' : ''}>
-                        <span>${e.nombre}</span>
-                        <span class="text-[10px] font-normal opacity-90">${e.puede_ficharlo ? (esSalida ? 'Fichar Salida' : 'Fichar Entrada') : 'Sin permiso'}</span>
+                    <button type="button" class="emp-btn h-20 flex flex-col items-center justify-center text-center px-2 gap-1 rounded-lg border transition ${colorClase}" data-id="${e.id}" data-accion="${e.proxima_accion}" ${!e.puede_ficharlo ? 'disabled' : ''}>
+                        <span class="text-xs font-medium opacity-90">${e.nombre}</span>
+                        <span class="text-base font-bold">${e.puede_ficharlo ? (esSalida ? 'Fichar Salida' : 'Fichar Entrada') : 'Sin permiso'}</span>
                     </button>
                 `;
             }).join('');

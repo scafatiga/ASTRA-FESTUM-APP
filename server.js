@@ -2383,15 +2383,24 @@ app.post('/api/fichajes', requirePermiso('inout'), async (req, res) => {
 
 app.get('/api/fichajes', requirePermiso('inout'), async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT f.*, e.nombre AS empleado_nombre, pv.nombre AS punto_venta_nombre,
+    let query = `SELECT f.*, e.nombre AS empleado_nombre, pv.nombre AS punto_venta_nombre,
               u.nombre AS registrado_por_nombre
        FROM fichajes f
        LEFT JOIN empleados e ON e.id = f.empleado_id
        LEFT JOIN puntos_venta pv ON pv.id = f.punto_venta_id
-       LEFT JOIN usuarios u ON u.id = f.registrado_por
-       ORDER BY f.hora_entrada DESC`
-    );
+       LEFT JOIN usuarios u ON u.id = f.registrado_por`;
+    const params = [];
+
+    // Solo el administrador ve el listado completo; el resto solo ve lo suyo.
+    if (!req.session.usuario.es_admin) {
+      const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+      params.push(miEmpleadoId);
+      query += ` WHERE f.empleado_id = $${params.length}`;
+    }
+
+    query += ' ORDER BY f.hora_entrada DESC';
+
+    const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/fichajes:', err.message);
