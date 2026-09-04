@@ -80,6 +80,11 @@ function requirePermiso(tab) {
     if (!req.session || !req.session.usuario) {
       return res.status(401).json({ error: 'No autenticado' });
     }
+    // El administrador tiene acceso a todo automáticamente, sin depender de la
+    // rejilla de permisos (incluidas pestañas nuevas que aún no se le hayan marcado).
+    if (req.session.usuario.es_admin) {
+      return next();
+    }
     if (!req.session.usuario.permisos || !req.session.usuario.permisos[tab]) {
       return res.status(403).json({ error: 'No tienes acceso a esta sección' });
     }
@@ -111,7 +116,7 @@ app.use((req, res, next) => {
   }
 
   const permisoRequerido = PAGE_PERMISOS[req.path];
-  if (permisoRequerido && !req.session.usuario.permisos[permisoRequerido]) {
+  if (permisoRequerido && !req.session.usuario.es_admin && !req.session.usuario.permisos[permisoRequerido]) {
     return res.status(403).send('No tienes acceso a esta sección.');
   }
 
@@ -1592,7 +1597,7 @@ app.get('/api/productos', requirePermiso('insumos'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.*, u.nombre AS registrado_por_nombre
-       FROM productos p
+       FROM insumos_productos p
        LEFT JOIN usuarios u ON u.id = p.registrado_por
        ORDER BY p.tipo_stand ASC, p.nombre ASC`
     );
@@ -1608,7 +1613,7 @@ app.get('/api/productos-dropdown', requirePermiso('albaranes'), async (req, res)
   const { tipo_stand } = req.query;
   try {
     const params = [];
-    let query = 'SELECT id, nombre, precio_unitario, tipo_stand FROM productos WHERE activo = TRUE';
+    let query = 'SELECT id, nombre, precio_unitario, tipo_stand FROM insumos_productos WHERE activo = TRUE';
     if (tipo_stand) {
       params.push(tipo_stand);
       query += ` AND tipo_stand = $${params.length}`;
@@ -1625,7 +1630,7 @@ app.get('/api/productos-dropdown', requirePermiso('albaranes'), async (req, res)
 app.get('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
   const { id } = req.params;
   try {
-    const { rows } = await pool.query('SELECT * FROM productos WHERE id = $1', [id]);
+    const { rows } = await pool.query('SELECT * FROM insumos_productos WHERE id = $1', [id]);
     if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
     res.json(rows[0]);
   } catch (err) {
@@ -1718,7 +1723,7 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
 
     for (const p of filasAImportar) {
       const resultado = await pool.query(
-        `INSERT INTO productos (nombre, tipo_stand, precio_unitario, registrado_por)
+        `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, registrado_por)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (nombre, tipo_stand)
          DO UPDATE SET precio_unitario = EXCLUDED.precio_unitario
@@ -1748,7 +1753,7 @@ app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO productos (nombre, tipo_stand, precio_unitario, registrado_por)
+      `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, registrado_por)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [nombre, tipo_stand, precio_unitario, req.session.usuario.id]
@@ -1773,7 +1778,7 @@ app.put('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'UPDATE productos SET nombre=$1, tipo_stand=$2, precio_unitario=$3 WHERE id=$4 RETURNING *',
+      'UPDATE insumos_productos SET nombre=$1, tipo_stand=$2, precio_unitario=$3 WHERE id=$4 RETURNING *',
       [nombre, tipo_stand, precio_unitario, id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
@@ -1789,7 +1794,7 @@ app.patch('/api/productos/:id/estado', requirePermiso('insumos'), async (req, re
   const { activo } = req.body;
   try {
     const { rows } = await pool.query(
-      'UPDATE productos SET activo = $1 WHERE id = $2 RETURNING *',
+      'UPDATE insumos_productos SET activo = $1 WHERE id = $2 RETURNING *',
       [activo, id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
@@ -1803,7 +1808,7 @@ app.patch('/api/productos/:id/estado', requirePermiso('insumos'), async (req, re
 app.delete('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query('DELETE FROM productos WHERE id = $1', [id]);
+    await pool.query('DELETE FROM insumos_productos WHERE id = $1', [id]);
     res.json({ ok: true });
   } catch (err) {
     console.error('Error DELETE /api/productos/:id:', err.message);
@@ -1880,7 +1885,7 @@ app.post('/api/albaranes', requirePermiso('albaranes'), async (req, res) => {
     let total = 0;
     const detalles = [];
     for (const linea of lineasValidas) {
-      const prodRes = await client.query('SELECT nombre, precio_unitario FROM productos WHERE id = $1', [linea.producto_id]);
+      const prodRes = await client.query('SELECT nombre, precio_unitario FROM insumos_productos WHERE id = $1', [linea.producto_id]);
       if (!prodRes.rows[0]) continue;
       const cantidad = Number(linea.cantidad);
       const precio_unitario = Number(prodRes.rows[0].precio_unitario);
