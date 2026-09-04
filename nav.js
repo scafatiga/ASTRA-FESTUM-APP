@@ -38,7 +38,7 @@
     // Todo lo que ya está construido vive en el menú lateral (☰), para no mezclarlo
     // con los 5 accesos de arriba, que replican tal cual la barra de AppSheet.
     const MENU_ITEMS = [
-        { label: 'Histórico de Cierres', href: '/historico.html', permiso: 'historico' },
+        { label: 'Registro Cierres Diarios', href: '/historico.html', permiso: 'historico' },
         { label: 'Puntos de Venta', href: '/puntos-venta.html', permiso: 'puntos_venta' },
         { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
         { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },
@@ -66,7 +66,9 @@
         document.body.prepend(topbar);
 
         const permisos = (usuario && usuario.permisos) || {};
-        const itemsVisibles = MENU_ITEMS.filter(item => permisos[item.permiso]);
+        const itemsVisibles = usuario && usuario.es_admin
+            ? MENU_ITEMS
+            : MENU_ITEMS.filter(item => permisos[item.permiso]);
 
         const overlay = document.createElement('div');
         overlay.id = 'afMenuOverlay';
@@ -105,7 +107,9 @@
 
     function construirBarraInferior(usuario) {
         const permisos = (usuario && usuario.permisos) || {};
-        const itemsVisibles = BOTTOM_ITEMS.filter(item => permisos[item.permiso]);
+        const itemsVisibles = usuario && usuario.es_admin
+            ? BOTTOM_ITEMS
+            : BOTTOM_ITEMS.filter(item => permisos[item.permiso]);
         if (itemsVisibles.length === 0) return;
 
         const nav = document.createElement('nav');

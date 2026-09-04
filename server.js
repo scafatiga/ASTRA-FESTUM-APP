@@ -412,7 +412,7 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
 
 // Detalle / Editar / Eliminar un cierre — SOLO el administrador (no requiere permiso "cierre"
 // ni "historico" adicional: es_admin es la única puerta para estas 3 acciones)
-app.get('/api/cierres/:id', requireAdmin, async (req, res) => {
+app.get('/api/cierres/:id', requirePermiso('historico'), async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
