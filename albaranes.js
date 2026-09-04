@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <td class="p-2">${p.nombre}</td>
                             <td class="p-2 text-gray-600">${formatearImporte(p.precio_unitario)}</td>
                             <td class="p-2">
-                                <input type="number" step="0.01" min="0" class="cantidad-input w-20 border rounded p-1 text-sm" data-producto-id="${p.id}" value="${cantidadPrevia}">
+                                <input type="text" inputmode="decimal" class="cantidad-input w-20 border rounded p-1 text-sm" data-producto-id="${p.id}" value="${cantidadPrevia}">
                             </td>
                             <td class="p-2 subtotal-celda text-gray-700">0.00 €</td>
                         </tr>
