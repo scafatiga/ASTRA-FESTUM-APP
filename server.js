@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { Resend } from 'resend';
 import * as XLSX from 'xlsx';
+import PDFDocument from 'pdfkit';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
@@ -1995,6 +1996,215 @@ app.post('/api/albaranes', requirePermiso('albaranes'), async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// Editar un Albarán completo: Fecha, Origen/Destino, Tipo_Stand, Tipo_Albarán y también
+// los productos/cantidades. Siempre revierte TODO el movimiento de stock viejo (con el
+// Origen/Destino que tenía antes) y aplica el nuevo desde cero (con lo que se envía ahora),
+// dentro de una única transacción.
+app.put('/api/albaranes/:id', requirePermiso('albaranes'), async (req, res) => {
+  const { id } = req.params;
+  const { fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, lineas } = req.body;
+
+  if (!fecha || !punto_venta_origen_id || !punto_venta_destino_id || !tipo_stand || !tipo_albaran) {
+    return res.status(400).json({ error: 'Fecha, origen, destino, Tipo_Stand y Tipo de Albarán son obligatorios' });
+  }
+  if (String(punto_venta_origen_id) === String(punto_venta_destino_id)) {
+    return res.status(400).json({ error: 'El punto de venta origen y destino no pueden ser el mismo' });
+  }
+  if (!TIPOS_STAND_VALIDOS.includes(tipo_stand)) {
+    return res.status(400).json({ error: 'Tipo_Stand no válido' });
+  }
+  if (!TIPOS_ALBARAN_VALIDOS.includes(tipo_albaran)) {
+    return res.status(400).json({ error: 'Tipo de Albarán no válido' });
+  }
+
+  const lineasValidas = (Array.isArray(lineas) ? lineas : []).filter(l => l.producto_id && Number(l.cantidad) > 0);
+  if (lineasValidas.length === 0) {
+    return res.status(400).json({ error: 'Añade al menos un producto con cantidad mayor que 0' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const actual = await client.query('SELECT * FROM albaranes WHERE id = $1', [id]);
+    if (!actual.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Albarán no encontrado' });
+    }
+    const anterior = actual.rows[0];
+
+    // 1) Revierte TODO el movimiento de stock viejo (con el Origen/Destino que tenía antes)
+    const detalleAnterior = await client.query('SELECT * FROM albaran_detalle WHERE albaran_id = $1', [id]);
+    for (const d of detalleAnterior.rows) {
+      if (!d.producto_id) continue;
+      await client.query(
+        'UPDATE producto_stock SET cantidad = cantidad + $1 WHERE producto_id = $2 AND punto_venta_id = $3',
+        [d.cantidad, d.producto_id, anterior.punto_venta_origen_id]
+      );
+      await client.query(
+        'UPDATE producto_stock SET cantidad = cantidad - $1 WHERE producto_id = $2 AND punto_venta_id = $3',
+        [d.cantidad, d.producto_id, anterior.punto_venta_destino_id]
+      );
+    }
+
+    // 2) Borra las líneas viejas
+    await client.query('DELETE FROM albaran_detalle WHERE albaran_id = $1', [id]);
+
+    // 3) Calcula las líneas nuevas (precio actual del catálogo) y aplica el movimiento nuevo
+    let total = 0;
+    for (const linea of lineasValidas) {
+      const prodRes = await client.query('SELECT nombre, precio_unitario FROM insumos_productos WHERE id = $1', [linea.producto_id]);
+      if (!prodRes.rows[0]) continue;
+      const cantidad = Number(linea.cantidad);
+      const precio_unitario = Number(prodRes.rows[0].precio_unitario);
+      const subtotal = cantidad * precio_unitario;
+      total += subtotal;
+
+      await client.query(
+        `INSERT INTO albaran_detalle (albaran_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, linea.producto_id, prodRes.rows[0].nombre, cantidad, precio_unitario, subtotal]
+      );
+
+      await client.query(
+        `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
+         VALUES ($1, $2, -($3::numeric))
+         ON CONFLICT (producto_id, punto_venta_id)
+         DO UPDATE SET cantidad = producto_stock.cantidad - $3::numeric`,
+        [linea.producto_id, punto_venta_origen_id, cantidad]
+      );
+      await client.query(
+        `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
+         VALUES ($1, $2, $3::numeric)
+         ON CONFLICT (producto_id, punto_venta_id)
+         DO UPDATE SET cantidad = producto_stock.cantidad + $3::numeric`,
+        [linea.producto_id, punto_venta_destino_id, cantidad]
+      );
+    }
+
+    // 4) Actualiza la cabecera
+    const actualizado = await client.query(
+      `UPDATE albaranes SET
+         fecha = $1, punto_venta_origen_id = $2, punto_venta_destino_id = $3,
+         tipo_stand = $4, tipo_albaran = $5, total_albaran = $6
+       WHERE id = $7
+       RETURNING *`,
+      [fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, total, id]
+    );
+
+    await client.query('COMMIT');
+    res.json(actualizado.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error PUT /api/albaranes/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Genera el PDF del Albarán con la plantilla ASTRA
+app.get('/api/albaranes/:id/pdf', requirePermiso('albaranes'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const cab = await pool.query(
+      `SELECT a.*, u.nombre AS registrado_por_nombre,
+              po.nombre AS origen_nombre, pd.nombre AS destino_nombre
+       FROM albaranes a
+       LEFT JOIN usuarios u ON u.id = a.registrado_por
+       LEFT JOIN puntos_venta po ON po.id = a.punto_venta_origen_id
+       LEFT JOIN puntos_venta pd ON pd.id = a.punto_venta_destino_id
+       WHERE a.id = $1`,
+      [id]
+    );
+    if (!cab.rows[0]) return res.status(404).json({ error: 'Albarán no encontrado' });
+    const a = cab.rows[0];
+
+    const detalle = await pool.query(
+      'SELECT * FROM albaran_detalle WHERE albaran_id = $1 ORDER BY producto_nombre ASC',
+      [id]
+    );
+
+    const nombreArchivo = `albaran-${id.slice(0, 8)}.pdf`;
+    res.set('Content-Type', 'application/pdf');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    } else {
+      res.set('Content-Disposition', `inline; filename="${nombreArchivo}"`);
+    }
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    doc.pipe(res);
+
+    // Cabecera
+    doc.fontSize(20).font('Helvetica-Bold').text('ASTRA', { align: 'left' });
+    doc.fontSize(14).font('Helvetica-Bold').text('ALBARÁN DE ENTREGA');
+    doc.moveDown(1);
+
+    const fechaFormateada = a.fecha ? new Date(a.fecha).toLocaleDateString('es-ES') : '-';
+    const filasCabecera = [
+      ['Nº Albarán:', id],
+      ['Fecha:', fechaFormateada],
+      ['Punto de Venta Origen:', a.origen_nombre || '-'],
+      ['Punto de Venta Destino:', a.destino_nombre || '-'],
+      ['Tipo Stand:', a.tipo_stand],
+      ['Tipo Albarán:', a.tipo_albaran],
+      ['Usuario:', a.registrado_por_nombre || '-']
+    ];
+
+    doc.fontSize(10).font('Helvetica');
+    filasCabecera.forEach(([label, valor]) => {
+      doc.font('Helvetica-Bold').text(label, { continued: true });
+      doc.font('Helvetica').text(' ' + valor);
+    });
+    doc.moveDown(1);
+
+    // Tabla de productos
+    const startX = doc.x;
+    let y = doc.y;
+    const colWidths = [220, 80, 100, 100];
+    const headers = ['PRODUCTO', 'CANTIDAD', 'PRECIO UNIT.', 'SUBTOTAL'];
+
+    function dibujarFilaTabla(valores, y, negrita) {
+      doc.font(negrita ? 'Helvetica-Bold' : 'Helvetica').fontSize(10);
+      let x = startX;
+      valores.forEach((valor, i) => {
+        doc.text(String(valor), x, y, { width: colWidths[i], align: i === 0 ? 'left' : 'right' });
+        x += colWidths[i];
+      });
+    }
+
+    dibujarFilaTabla(headers, y, true);
+    y += 18;
+    doc.moveTo(startX, y - 4).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), y - 4).stroke();
+
+    detalle.rows.forEach(linea => {
+      if (y > 720) { // salto de página si no cabe
+        doc.addPage();
+        y = 50;
+      }
+      dibujarFilaTabla(
+        [linea.producto_nombre, linea.cantidad, Number(linea.precio_unitario).toFixed(2) + ' €', Number(linea.subtotal).toFixed(2) + ' €'],
+        y, false
+      );
+      y += 16;
+    });
+
+    y += 10;
+    doc.moveTo(startX, y).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), y).stroke();
+    y += 10;
+
+    doc.font('Helvetica-Bold').fontSize(12).text(`TOTAL ALBARÁN: ${Number(a.total_albaran).toFixed(2)} €`, startX, y, { align: 'right', width: colWidths.reduce((a, b) => a + b, 0) });
+
+    doc.fontSize(8).font('Helvetica').text('Documento generado automáticamente por ASTRA', 50, 780, { align: 'center', width: 500 });
+
+    doc.end();
+  } catch (err) {
+    console.error('Error GET /api/albaranes/:id/pdf:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

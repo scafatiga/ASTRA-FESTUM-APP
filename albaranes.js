@@ -35,9 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '');
-    pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => cargarRejillaProductos(valor));
-
     async function cargarPuntosVentaSelect() {
         try {
             const res = await fetch('/api/puntos-venta');
@@ -64,22 +61,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         return d.toLocaleDateString('es-ES');
     }
 
-    function formatearFechaHora(f) {
-        if (!f) return '-';
-        const d = new Date(f);
-        if (isNaN(d.getTime())) return '-';
-        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    }
-
     function formatearImporte(n) {
         return Number(n || 0).toFixed(2) + ' €';
     }
 
-    // --- Rejilla de productos: se rellena entera al elegir Tipo_Stand ---
-    async function cargarRejillaProductos(tipoStand) {
+    // --- Rejilla de productos: reutilizable para Alta y para Editar ---
+    // tablaId: <tbody> donde pintar las filas. cantidadesIniciales: { producto_id: cantidad } (opcional, para precargar en Editar)
+    async function cargarRejillaProductosEn(tablaId, bloqueEl, totalEl, tipoStand, cantidadesIniciales) {
+        const tablaEl = document.getElementById(tablaId);
         if (!tipoStand) {
-            bloqueProductos.classList.add('hidden');
-            tablaProductosGrid.innerHTML = '';
+            bloqueEl.classList.add('hidden');
+            tablaEl.innerHTML = '';
             return;
         }
         try {
@@ -88,55 +80,50 @@ document.addEventListener('DOMContentLoaded', async () => {
             const productos = await res.json();
 
             if (productos.length === 0) {
-                tablaProductosGrid.innerHTML = `<tr><td colspan="4" class="p-3 text-center text-gray-500">No hay productos activos para ${tipoStand}.</td></tr>`;
+                tablaEl.innerHTML = `<tr><td colspan="4" class="p-3 text-center text-gray-500">No hay productos activos para ${tipoStand}.</td></tr>`;
             } else {
-                tablaProductosGrid.innerHTML = productos.map(p => `
-                    <tr class="border-b producto-fila" data-precio="${p.precio_unitario}">
-                        <td class="p-2">${p.nombre}</td>
-                        <td class="p-2 text-gray-600">${formatearImporte(p.precio_unitario)}</td>
-                        <td class="p-2">
-                            <input type="number" step="0.01" min="0" class="cantidad-input w-20 border rounded p-1 text-sm" data-producto-id="${p.id}" value="">
-                        </td>
-                        <td class="p-2 subtotal-celda text-gray-700">0.00 €</td>
-                    </tr>
-                `).join('');
+                tablaEl.innerHTML = productos.map(p => {
+                    const cantidadPrevia = cantidadesIniciales && cantidadesIniciales[p.id] ? cantidadesIniciales[p.id] : '';
+                    return `
+                        <tr class="border-b producto-fila" data-precio="${p.precio_unitario}">
+                            <td class="p-2">${p.nombre}</td>
+                            <td class="p-2 text-gray-600">${formatearImporte(p.precio_unitario)}</td>
+                            <td class="p-2">
+                                <input type="number" step="0.01" min="0" class="cantidad-input w-20 border rounded p-1 text-sm" data-producto-id="${p.id}" value="${cantidadPrevia}">
+                            </td>
+                            <td class="p-2 subtotal-celda text-gray-700">0.00 €</td>
+                        </tr>
+                    `;
+                }).join('');
 
-                tablaProductosGrid.querySelectorAll('.cantidad-input').forEach(input => {
-                    input.addEventListener('input', actualizarTotales);
+                tablaEl.querySelectorAll('.cantidad-input').forEach(input => {
+                    input.addEventListener('input', () => actualizarTotalesEn(tablaId, totalEl));
                 });
             }
 
-            bloqueProductos.classList.remove('hidden');
-            document.getElementById('buscadorProductosGrid').value = '';
-            actualizarTotales();
+            bloqueEl.classList.remove('hidden');
+            actualizarTotalesEn(tablaId, totalEl);
         } catch (err) {
             console.error(err);
         }
     }
 
-    document.getElementById('buscadorProductosGrid').addEventListener('input', (e) => {
-        const q = e.target.value.trim().toLowerCase();
-        tablaProductosGrid.querySelectorAll('.producto-fila').forEach(fila => {
-            const nombre = fila.querySelector('td').textContent.toLowerCase();
-            fila.style.display = nombre.includes(q) ? '' : 'none';
-        });
-    });
-
-    function actualizarTotales() {
+    function actualizarTotalesEn(tablaId, totalElId) {
+        const tablaEl = document.getElementById(tablaId);
         let total = 0;
-        tablaProductosGrid.querySelectorAll('.producto-fila').forEach(fila => {
+        tablaEl.querySelectorAll('.producto-fila').forEach(fila => {
             const precio = Number(fila.dataset.precio) || 0;
             const cantidad = Number(fila.querySelector('.cantidad-input').value) || 0;
             const subtotal = precio * cantidad;
             fila.querySelector('.subtotal-celda').textContent = formatearImporte(subtotal);
             total += subtotal;
         });
-        document.getElementById('totalAlbaran').textContent = formatearImporte(total);
+        document.getElementById(totalElId).textContent = formatearImporte(total);
     }
 
-    function recogerLineas() {
+    function recogerLineasDe(tablaId) {
         const lineas = [];
-        tablaProductosGrid.querySelectorAll('.cantidad-input').forEach(input => {
+        document.getElementById(tablaId).querySelectorAll('.cantidad-input').forEach(input => {
             const cantidad = Number(input.value) || 0;
             if (cantidad > 0) {
                 lineas.push({ producto_id: input.dataset.productoId, cantidad });
@@ -144,6 +131,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         return lineas;
     }
+
+    function conectarBuscador(inputId, tablaId) {
+        document.getElementById(inputId).addEventListener('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            document.getElementById(tablaId).querySelectorAll('.producto-fila').forEach(fila => {
+                const nombre = fila.querySelector('td').textContent.toLowerCase();
+                fila.style.display = nombre.includes(q) ? '' : 'none';
+            });
+        });
+    }
+    conectarBuscador('buscadorProductosGrid', 'tablaProductosGrid');
+    conectarBuscador('editBuscadorProductosGrid', 'editTablaProductosGrid');
+
+    pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '');
+    pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => {
+        document.getElementById('buscadorProductosGrid').value = '';
+        cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor);
+    });
 
     // --- Colapsar / expandir la lista ---
     const btnToggleLista = document.getElementById('btnToggleLista');
@@ -177,11 +182,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-600">${a.tipo_stand}</td>
                     <td class="p-3 text-gray-600">${a.tipo_albaran}</td>
                     <td class="p-3 font-semibold text-gray-800">${formatearImporte(a.total_albaran)}</td>
-                    <td class="p-3 text-gray-500 text-xs">${a.registrado_por_nombre || '-'}<br>${formatearFechaHora(a.created_at)}</td>
+                    <td class="p-3">
+                        <a href="/api/albaranes/${a.id}/pdf" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
+                        <span class="text-gray-300">|</span>
+                        <a href="/api/albaranes/${a.id}/pdf?download=1" class="text-blue-600 hover:underline text-xs">Descargar</a>
+                    </td>
                     <td class="p-3">
                         <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${a.id}">
                             <option value="">Acción...</option>
                             <option value="detalle">Detalle</option>
+                            <option value="editar">Editar</option>
                             <option value="eliminar">Eliminar</option>
                         </select>
                     </td>
@@ -196,6 +206,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (accion === 'detalle') {
                         await abrirDetalle(id);
+                    } else if (accion === 'editar') {
+                        await abrirEditar(id);
                     } else if (accion === 'eliminar') {
                         await eliminarAlbaran(id);
                     }
@@ -240,6 +252,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `).join('');
 
+            html += `<div class="pt-3"><a href="/api/albaranes/${id}/pdf" target="_blank" class="text-blue-600 hover:underline text-sm">Ver PDF</a> <span class="text-gray-300">|</span> <a href="/api/albaranes/${id}/pdf?download=1" class="text-blue-600 hover:underline text-sm">Descargar PDF</a></div>`;
+
             document.getElementById('contenidoDetalle').innerHTML = html;
             document.getElementById('modalDetalle').classList.remove('hidden');
         } catch (err) {
@@ -249,6 +263,104 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('btnCerrarDetalle').addEventListener('click', () => {
         document.getElementById('modalDetalle').classList.add('hidden');
+    });
+
+    // --- Editar (Fecha, Origen, Destino, Tipo_Stand, Tipo de Albarán y productos/cantidades) ---
+    const formEditar = document.getElementById('formEditarAlbaran');
+
+    async function abrirEditar(id) {
+        try {
+            const res = await fetch(`/api/albaranes/${id}`);
+            if (!res.ok) throw new Error('No se pudo cargar el albarán');
+            const a = await res.json();
+
+            document.getElementById('editId').value = a.id;
+            document.getElementById('editFecha').value = a.fecha ? a.fecha.substring(0, 10) : '';
+
+            const opcionesPV = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            document.getElementById('editPuntoVentaOrigen').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
+            document.getElementById('editPuntoVentaDestino').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
+            document.getElementById('editPuntoVentaOrigen').value = a.punto_venta_origen_id || '';
+            document.getElementById('editPuntoVentaDestino').value = a.punto_venta_destino_id || '';
+            document.getElementById('editMismoPuntoError').classList.add('hidden');
+
+            pintarBotones('editTipoAlbaranBotones', 'editTipoAlbaran', TIPOS_ALBARAN, a.tipo_albaran);
+
+            // Cantidades actuales por producto, para precargar la rejilla
+            const cantidadesIniciales = {};
+            (a.lineas || []).forEach(l => {
+                if (l.producto_id) cantidadesIniciales[l.producto_id] = l.cantidad;
+            });
+
+            const editBloqueProductos = document.getElementById('editBloqueProductos');
+            pintarBotones('editTipoStandBotones', 'editTipoStand', TIPOS_STAND, a.tipo_stand, (valor) => {
+                document.getElementById('editBuscadorProductosGrid').value = '';
+                cargarRejillaProductosEn('editTablaProductosGrid', editBloqueProductos, 'editTotalAlbaran', valor, cantidadesIniciales);
+            });
+            document.getElementById('editBuscadorProductosGrid').value = '';
+            await cargarRejillaProductosEn('editTablaProductosGrid', editBloqueProductos, 'editTotalAlbaran', a.tipo_stand, cantidadesIniciales);
+
+            document.getElementById('modalEditar').classList.remove('hidden');
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo cargar el albarán para editar.');
+        }
+    }
+    document.getElementById('btnCerrarEditar').addEventListener('click', () => {
+        document.getElementById('modalEditar').classList.add('hidden');
+    });
+
+    formEditar.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const origen = document.getElementById('editPuntoVentaOrigen').value;
+        const destino = document.getElementById('editPuntoVentaDestino').value;
+        const tipoStand = document.getElementById('editTipoStand').value;
+        const tipoAlbaran = document.getElementById('editTipoAlbaran').value;
+
+        if (!formEditar.checkValidity() || !tipoStand || !tipoAlbaran) {
+            formEditar.reportValidity();
+            if (!tipoStand) alert('Selecciona un Tipo_Stand.');
+            else if (!tipoAlbaran) alert('Selecciona un Tipo de Albarán.');
+            return;
+        }
+        if (origen === destino) {
+            document.getElementById('editMismoPuntoError').classList.remove('hidden');
+            return;
+        }
+        document.getElementById('editMismoPuntoError').classList.add('hidden');
+
+        const lineas = recogerLineasDe('editTablaProductosGrid');
+        if (lineas.length === 0) {
+            alert('Añade al menos una cantidad mayor que 0 en algún producto.');
+            return;
+        }
+
+        const id = document.getElementById('editId').value;
+        const datos = {
+            fecha: document.getElementById('editFecha').value,
+            punto_venta_origen_id: origen,
+            punto_venta_destino_id: destino,
+            tipo_stand: tipoStand,
+            tipo_albaran: tipoAlbaran,
+            lineas
+        };
+
+        try {
+            const res = await fetch(`/api/albaranes/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(datos)
+            });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al guardar los cambios');
+
+            document.getElementById('modalEditar').classList.add('hidden');
+            cargarAlbaranes();
+        } catch (err) {
+            console.error(err);
+            alert(err.message || 'No se pudo guardar el albarán.');
+        }
     });
 
     // --- Eliminar (revierte el stock automáticamente en el servidor) ---
@@ -286,7 +398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             document.getElementById('mismoPuntoError').classList.add('hidden');
 
-            const lineas = recogerLineas();
+            const lineas = recogerLineasDe('tablaProductosGrid');
             if (lineas.length === 0) {
                 alert('Añade al menos una cantidad mayor que 0 en algún producto.');
                 return;
@@ -312,7 +424,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 form.reset();
                 pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '');
-                pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => cargarRejillaProductos(valor));
+                pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => {
+                    document.getElementById('buscadorProductosGrid').value = '';
+                    cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor);
+                });
                 bloqueProductos.classList.add('hidden');
                 cargarAlbaranes();
             } catch (err) {
