@@ -82,21 +82,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
     });
 
+    // --- Buscador en tiempo real (punto de venta, socio o importe) ---
+    let sociosCache = [];
+    document.getElementById('buscadorSocios').addEventListener('input', (e) => {
+        renderizarTablaSocios(filtrarSocios(e.target.value));
+    });
+
+    function filtrarSocios(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return sociosCache;
+        return sociosCache.filter(s => {
+            const campos = [nombrePuntoVenta(s.punto_venta_id), s.socio, String(s.importe || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
     async function cargarSocios() {
         try {
             const res = await fetch('/api/socios');
             if (!res.ok) throw new Error('Error al cargar los registros');
-            const datos = await res.json();
+            sociosCache = await res.json();
 
-            document.getElementById('contadorSocios').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorSocios').textContent = sociosCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">No hay registros.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorSocios').value;
+            renderizarTablaSocios(filtrarSocios(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">Error al cargar los registros.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(s => `
+    function renderizarTablaSocios(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">No hay registros que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(s => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(s.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(s.punto_venta_id)}</td>
@@ -131,10 +155,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">Error al cargar los registros.</td></tr>`;
-        }
     }
 
     // --- Detalle ---

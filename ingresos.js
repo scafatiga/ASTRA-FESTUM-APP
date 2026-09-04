@@ -52,21 +52,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
     });
 
+    // --- Buscador en tiempo real (punto de venta o importe) ---
+    let ingresosCache = [];
+    document.getElementById('buscadorIngresos').addEventListener('input', (e) => {
+        renderizarTablaIngresos(filtrarIngresos(e.target.value));
+    });
+
+    function filtrarIngresos(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return ingresosCache;
+        return ingresosCache.filter(i => {
+            const campos = [nombrePuntoVenta(i.punto_venta_id), String(i.importe || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
     async function cargarIngresos() {
         try {
             const res = await fetch('/api/ingresos');
             if (!res.ok) throw new Error('Error al cargar ingresos');
-            const datos = await res.json();
+            ingresosCache = await res.json();
 
-            document.getElementById('contadorIngresos').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorIngresos').textContent = ingresosCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay ingresos registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorIngresos').value;
+            renderizarTablaIngresos(filtrarIngresos(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los ingresos.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(i => `
+    function renderizarTablaIngresos(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay ingresos que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(i => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(i.fecha)}</td>
                     <td class="p-3 text-gray-600">${formatearImporte(i.importe)}</td>
@@ -89,24 +113,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.accionSelect').forEach(sel => {
-                sel.addEventListener('change', async () => {
-                    const id = sel.dataset.id;
-                    const accion = sel.value;
-                    sel.value = '';
+        document.querySelectorAll('.accionSelect').forEach(sel => {
+            sel.addEventListener('change', async () => {
+                const id = sel.dataset.id;
+                const accion = sel.value;
+                sel.value = '';
 
-                    if (accion === 'editar') {
-                        await abrirEditar(id);
-                    } else if (accion === 'eliminar') {
-                        await eliminarIngreso(id);
-                    }
-                });
+                if (accion === 'editar') {
+                    await abrirEditar(id);
+                } else if (accion === 'eliminar') {
+                    await eliminarIngreso(id);
+                }
             });
-
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar los ingresos.</td></tr>`;
-        }
+        });
     }
 
     // --- Editar ---

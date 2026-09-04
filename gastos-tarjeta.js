@@ -68,21 +68,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
     });
 
+    // --- Buscador en tiempo real (proveedor, punto de venta o importe) ---
+    let gastosCache = [];
+    document.getElementById('buscadorGastos').addEventListener('input', (e) => {
+        renderizarTablaGastos(filtrarGastos(e.target.value));
+    });
+
+    function filtrarGastos(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return gastosCache;
+        return gastosCache.filter(g => {
+            const campos = [nombreProveedor(g.proveedor_id), nombrePuntoVenta(g.punto_venta_id), String(g.importe || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
     async function cargarGastos() {
         try {
             const res = await fetch('/api/gastos-tarjeta');
             if (!res.ok) throw new Error('Error al cargar los gastos');
-            const datos = await res.json();
+            gastosCache = await res.json();
 
-            document.getElementById('contadorGastos').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorGastos').textContent = gastosCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">No hay gastos registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorGastos').value;
+            renderizarTablaGastos(filtrarGastos(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">Error al cargar los gastos.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(g => `
+    function renderizarTablaGastos(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">No hay gastos que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(g => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(g.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombreProveedor(g.proveedor_id)}</td>
@@ -120,10 +144,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">Error al cargar los gastos.</td></tr>`;
-        }
     }
 
     // --- Editar ---

@@ -53,20 +53,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
+    // --- Buscador en tiempo real (proveedor o importe) ---
+    let facturasCache = [];
+    document.getElementById('buscadorFacturas').addEventListener('input', (e) => {
+        renderizarTablaFacturas(filtrarFacturas(e.target.value));
+    });
+
+    function filtrarFacturas(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return facturasCache;
+        return facturasCache.filter(f => {
+            const campos = [nombreProveedor(f.proveedor_id), String(f.importe || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     async function cargarFacturas() {
         try {
             const res = await fetch('/api/factura-cash');
             if (!res.ok) throw new Error('Error al cargar las facturas');
-            const datos = await res.json();
+            facturasCache = await res.json();
 
-            document.getElementById('contadorFacturas').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorFacturas').textContent = facturasCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay facturas registradas.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorFacturas').value;
+            renderizarTablaFacturas(filtrarFacturas(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar las facturas.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(f => `
+    function renderizarTablaFacturas(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay facturas que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(f => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(f.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombreProveedor(f.proveedor_id)}</td>
@@ -76,7 +100,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <span class="text-gray-300">|</span>
                         <a href="/api/factura-cash/${f.id}/factura?download=1" class="text-blue-600 hover:underline text-xs">Descargar</a>
                     </td>
-                    <td class="p-3 text-gray-500 text-xs">${f.registrado_por_nombre || '-'}<br>${formatearFechaHora(f.created_at)}</td>
                     <td class="p-3">
                         <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${f.id}">
                             <option value="">Acción...</option>
@@ -88,26 +111,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.accionSelect').forEach(sel => {
-                sel.addEventListener('change', async () => {
-                    const id = sel.dataset.id;
-                    const accion = sel.value;
-                    sel.value = '';
+        document.querySelectorAll('.accionSelect').forEach(sel => {
+            sel.addEventListener('change', async () => {
+                const id = sel.dataset.id;
+                const accion = sel.value;
+                sel.value = '';
 
-                    if (accion === 'detalle') {
-                        await abrirDetalle(id);
-                    } else if (accion === 'editar') {
-                        await abrirEditar(id);
-                    } else if (accion === 'eliminar') {
-                        await eliminarFactura(id);
-                    }
-                });
+                if (accion === 'detalle') {
+                    await abrirDetalle(id);
+                } else if (accion === 'editar') {
+                    await abrirEditar(id);
+                } else if (accion === 'eliminar') {
+                    await eliminarFactura(id);
+                }
             });
-
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar las facturas.</td></tr>`;
-        }
+        });
     }
 
     // --- Detalle ---
@@ -124,7 +142,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ['Observaciones', f.observaciones || '-'],
                 ['Factura', f.tiene_factura
                     ? `<a href="/api/factura-cash/${f.id}/factura" target="_blank" class="text-blue-600 hover:underline">Ver archivo</a>`
-                    : 'No adjuntada']
+                    : 'No adjuntada'],
+                ['Registrado por', f.registrado_por_nombre
+                    ? `${f.registrado_por_nombre} — ${formatearFechaHora(f.created_at)}`
+                    : '-']
             ];
 
             document.getElementById('contenidoDetalle').innerHTML = filas.map(([label, valor]) => `

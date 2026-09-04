@@ -161,20 +161,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
+    // --- Buscador en tiempo real (punto de venta o importe) ---
+    let albaranesCache = [];
+    document.getElementById('buscadorAlbaranes').addEventListener('input', (e) => {
+        renderizarTablaAlbaranes(filtrarAlbaranes(e.target.value));
+    });
+
+    function filtrarAlbaranes(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return albaranesCache;
+        return albaranesCache.filter(a => {
+            const campos = [nombrePuntoVenta(a.punto_venta_origen_id), nombrePuntoVenta(a.punto_venta_destino_id), String(a.total_albaran || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     async function cargarAlbaranes() {
         try {
             const res = await fetch('/api/albaranes');
             if (!res.ok) throw new Error('Error al cargar los albaranes');
-            const datos = await res.json();
+            albaranesCache = await res.json();
 
-            document.getElementById('contadorAlbaranes').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorAlbaranes').textContent = albaranesCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay albaranes registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorAlbaranes').value;
+            renderizarTablaAlbaranes(filtrarAlbaranes(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los albaranes.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(a => `
+    function renderizarTablaAlbaranes(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">No hay albaranes que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(a => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(a.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(a.punto_venta_origen_id)}</td>
@@ -198,26 +222,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.accionSelect').forEach(sel => {
-                sel.addEventListener('change', async () => {
-                    const id = sel.dataset.id;
-                    const accion = sel.value;
-                    sel.value = '';
+        document.querySelectorAll('.accionSelect').forEach(sel => {
+            sel.addEventListener('change', async () => {
+                const id = sel.dataset.id;
+                const accion = sel.value;
+                sel.value = '';
 
-                    if (accion === 'detalle') {
-                        await abrirDetalle(id);
-                    } else if (accion === 'editar') {
-                        await abrirEditar(id);
-                    } else if (accion === 'eliminar') {
-                        await eliminarAlbaran(id);
-                    }
-                });
+                if (accion === 'detalle') {
+                    await abrirDetalle(id);
+                } else if (accion === 'editar') {
+                    await abrirEditar(id);
+                } else if (accion === 'eliminar') {
+                    await eliminarAlbaran(id);
+                }
             });
-
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">Error al cargar los albaranes.</td></tr>`;
-        }
+        });
     }
 
     // --- Detalle ---

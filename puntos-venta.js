@@ -10,18 +10,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     }
 
+    // --- Buscador en tiempo real (nombre) ---
+    document.getElementById('buscadorPuntosVenta').addEventListener('input', (e) => {
+        renderizarTablaPuntosVenta(filtrarPuntosVenta(e.target.value));
+    });
+
+    function filtrarPuntosVenta(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return puntosVentaCache;
+        return puntosVentaCache.filter(pv => (pv.nombre || '').toLowerCase().includes(q));
+    }
+
     async function cargarPuntosVenta() {
         try {
             const res = await fetch('/api/puntos-venta/todos');
             if (!res.ok) throw new Error('Error al cargar puntos de venta');
             puntosVentaCache = await res.json();
 
-            if (!puntosVentaCache || puntosVentaCache.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay puntos de venta registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorPuntosVenta').value;
+            renderizarTablaPuntosVenta(filtrarPuntosVenta(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar los puntos de venta.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = puntosVentaCache.map(pv => `
+    function renderizarTablaPuntosVenta(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay puntos de venta que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(pv => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 font-medium text-gray-800">${pv.nombre || ''}</td>
                     <td class="p-3 text-gray-600">${pv.direccion || '-'}</td>
@@ -30,9 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${pv.activo ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${pv.id}" data-activo="${pv.activo}">
                             ${pv.activo ? 'Activo' : 'Inactivo'}
                         </button>
-                    </td>
-                    <td class="p-3 text-gray-500 text-xs">
-                        ${pv.registrado_por_nombre || '-'}<br>${formatearFechaHora(pv.creado_en)}
                     </td>
                     <td class="p-3">
                         <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${pv.id}">
@@ -45,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             `).join('');
 
-            document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+        document.querySelectorAll('.btnToggleEstado').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const id = btn.dataset.id;
                     const activoActual = btn.dataset.activo === 'true';
@@ -80,10 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los puntos de venta.</td></tr>`;
-        }
     }
 
     // --- Detalle ---

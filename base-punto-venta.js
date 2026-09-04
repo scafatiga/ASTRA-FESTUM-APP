@@ -55,21 +55,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
     });
 
+    // --- Buscador en tiempo real (punto de venta o importe) ---
+    let traspasosCache = [];
+    document.getElementById('buscadorTraspasos').addEventListener('input', (e) => {
+        renderizarTablaTraspasos(filtrarTraspasos(e.target.value));
+    });
+
+    function filtrarTraspasos(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return traspasosCache;
+        return traspasosCache.filter(b => {
+            const campos = [nombrePuntoVenta(b.punto_venta_origen_id), nombrePuntoVenta(b.punto_venta_destino_id), String(b.importe || '')];
+            return campos.some(c => (c || '').toLowerCase().includes(q));
+        });
+    }
+
     // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
     async function cargarTraspasos() {
         try {
             const res = await fetch('/api/base-punto-venta');
             if (!res.ok) throw new Error('Error al cargar los traspasos');
-            const datos = await res.json();
+            traspasosCache = await res.json();
 
-            document.getElementById('contadorTraspasos').textContent = datos ? datos.length : 0;
+            document.getElementById('contadorTraspasos').textContent = traspasosCache.length;
 
-            if (!datos || datos.length === 0) {
-                tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay traspasos registrados.</td></tr>`;
-                return;
-            }
+            const texto = document.getElementById('buscadorTraspasos').value;
+            renderizarTablaTraspasos(filtrarTraspasos(texto));
+        } catch (err) {
+            console.error(err);
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los traspasos.</td></tr>`;
+        }
+    }
 
-            tabla.innerHTML = datos.map(b => `
+    function renderizarTablaTraspasos(datos) {
+        if (!datos || datos.length === 0) {
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay traspasos que coincidan.</td></tr>`;
+            return;
+        }
+
+        tabla.innerHTML = datos.map(b => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(b.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(b.punto_venta_origen_id)}</td>
@@ -103,10 +127,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
-        } catch (err) {
-            console.error(err);
-            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los traspasos.</td></tr>`;
-        }
     }
 
     // --- Detalle ---

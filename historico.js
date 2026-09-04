@@ -74,16 +74,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         return detallesHtml;
     }
 
+    // --- Buscador en tiempo real (fecha o punto de venta) ---
+    let cierresCache = [];
+    document.getElementById('buscadorCierres').addEventListener('input', (e) => {
+        renderizarTablaCierres(filtrarCierres(e.target.value));
+    });
+
+    function filtrarCierres(texto) {
+        const q = (texto || '').trim().toLowerCase();
+        if (!q) return cierresCache;
+        return cierresCache.filter(c => {
+            const { fechaFormateada, puntoVenta } = calcularTotales(c);
+            return fechaFormateada.toLowerCase().includes(q) || (puntoVenta || '').toLowerCase().includes(q);
+        });
+    }
+
     async function cargarCierres() {
         try {
             const response = await fetch('/api/cierres');
             if (!response.ok) throw new Error('Error al obtener el histórico');
 
-            const cierres = await response.json();
-            const colspanVacio = esAdmin ? 11 : 10;
+            cierresCache = await response.json();
+            const texto = document.getElementById('buscadorCierres').value;
+            renderizarTablaCierres(filtrarCierres(texto));
+        } catch (error) {
+            console.error('Error:', error);
+            const colspanVacio = esAdmin ? 10 : 9;
+            tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-red-500">Error al cargar los datos del histórico.</td></tr>`;
+        }
+    }
+
+    function renderizarTablaCierres(cierres) {
+            const colspanVacio = esAdmin ? 10 : 9;
 
             if (!cierres || cierres.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-gray-500">No hay cierres registrados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-gray-500">No hay cierres que coincidan.</td></tr>`;
                 return;
             }
 
@@ -111,7 +136,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
                         <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
                         <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
-                        <td class="p-3 text-gray-500 text-xs">${c.registrado_por_nombre || '-'}<br>${fechaFormateada}</td>
                         <td class="p-3">${detallesHtml}</td>
                         ${celdaAccion}
                     </tr>
@@ -135,12 +159,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 });
             }
-
-        } catch (error) {
-            console.error('Error:', error);
-            const colspanVacio = esAdmin ? 11 : 10;
-            tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-red-500">Error al cargar los datos del histórico.</td></tr>`;
-        }
     }
 
     // --- Detalle (solo administrador) ---

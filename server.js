@@ -1485,9 +1485,12 @@ app.get('/api/factura-cash/:id', requirePermiso('factura_cash'), async (req, res
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, fecha, proveedor_id, importe, observaciones, factura_nombre_original,
-              (factura_data IS NOT NULL) AS tiene_factura
-       FROM factura_cash WHERE id = $1`,
+      `SELECT f.id, f.fecha, f.proveedor_id, f.importe, f.observaciones, f.factura_nombre_original,
+              (f.factura_data IS NOT NULL) AS tiene_factura,
+              f.created_at, u.nombre AS registrado_por_nombre
+       FROM factura_cash f
+       LEFT JOIN usuarios u ON u.id = f.registrado_por
+       WHERE f.id = $1`,
       [id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Factura no encontrada' });
@@ -1597,9 +1600,15 @@ const TIPOS_ALBARAN_VALIDOS = ['INICIAL', 'FINAL', 'NORMAL'];
 app.get('/api/productos', requirePermiso('insumos'), async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT p.*, u.nombre AS registrado_por_nombre
+      `SELECT p.*, u.nombre AS registrado_por_nombre,
+              COALESCE(s.stock_total, 0) AS stock_total
        FROM insumos_productos p
        LEFT JOIN usuarios u ON u.id = p.registrado_por
+       LEFT JOIN (
+         SELECT producto_id, SUM(cantidad) AS stock_total
+         FROM producto_stock
+         GROUP BY producto_id
+       ) s ON s.producto_id = p.id
        ORDER BY p.tipo_stand ASC, p.nombre ASC`
     );
     res.json(rows);

@@ -66,14 +66,17 @@
                         <tbody id="tablaProductosGrid"></tbody>
                     </table>
                 </div>
-                <div class="flex justify-end mt-2 text-base font-bold text-gray-800">
-                    Total Albarán: <span id="totalAlbaran" class="ml-2">0.00 €</span>
-                </div>
             </div>
 
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
-                + Guardar Albarán
-            </button>
+            <!-- Total + Guardar: fijo abajo mientras se hace scroll por la rejilla de productos -->
+            <div class="sticky bottom-16 -mx-6 px-6 pt-3 pb-2 bg-white border-t shadow-[0_-4px_10px_-4px_rgba(0,0,0,0.15)]">
+                <div class="flex justify-end mb-2 text-base font-bold text-gray-800">
+                    Total Albarán: <span id="totalAlbaran" class="ml-2">0.00 €</span>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
+                    + Guardar Albarán
+                </button>
+            </div>
         </form>
 
         <!-- Lista (colapsada por defecto, más nuevo a más antiguo) -->
@@ -83,7 +86,9 @@
                 <polyline points="6 9 12 15 18 9"/>
             </svg>
         </button>
-        <div id="listaAlbaranesWrapper" class="hidden overflow-x-auto mt-3">
+        <div id="listaAlbaranesWrapper" class="hidden mt-3">
+            <input type="text" id="buscadorAlbaranes" placeholder="Buscar por punto de venta o importe..." class="w-full border p-2 rounded mb-3 focus:ring-2 focus:ring-blue-500">
+            <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
@@ -101,6 +106,7 @@
                     <tr><td colspan="8" class="p-4 text-center text-gray-500">Cargando...</td></tr>
                 </tbody>
             </table>
+            </div>
         </div>
 
     </div>
@@ -170,14 +176,16 @@
                             <tbody id="editTablaProductosGrid"></tbody>
                         </table>
                     </div>
-                    <div class="flex justify-end mt-2 text-base font-bold text-gray-800">
-                        Total Albarán: <span id="editTotalAlbaran" class="ml-2">0.00 €</span>
-                    </div>
                 </div>
 
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
-                    Guardar Cambios
-                </button>
+                <div class="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 bg-white border-t shadow-[0_-4px_10px_-4px_rgba(0,0,0,0.15)]">
+                    <div class="flex justify-end mb-2 text-base font-bold text-gray-800">
+                        Total Albarán: <span id="editTotalAlbaran" class="ml-2">0.00 €</span>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition shadow">
+                        Guardar Cambios
+                    </button>
+                </div>
             </form>
         </div>
     </div>

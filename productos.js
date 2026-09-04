@@ -76,13 +76,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderizarTabla(filtrarProductos(texto));
         } catch (err) {
             console.error(err);
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar los productos.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar los productos.</td></tr>`;
         }
     }
 
     function renderizarTabla(datos) {
         if (!datos || datos.length === 0) {
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay productos que coincidan.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay productos que coincidan.</td></tr>`;
             return;
         }
 
@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td class="p-3 font-medium text-gray-800">${p.nombre || ''}</td>
                 <td class="p-3 text-gray-600">${p.tipo_stand || '-'}</td>
                 <td class="p-3 text-gray-600">${formatearImporte(p.precio_unitario)}</td>
+                <td class="p-3 text-gray-600">${Number(p.stock_total || 0)}</td>
                 <td class="p-3">
                     <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${p.activo ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${p.id}" data-activo="${p.activo}">
                         ${p.activo ? 'Activo' : 'Inactivo'}

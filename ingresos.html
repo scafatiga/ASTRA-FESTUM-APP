@@ -48,7 +48,9 @@
                 <polyline points="6 9 12 15 18 9"/>
             </svg>
         </button>
-        <div id="listaIngresosWrapper" class="hidden overflow-x-auto mt-3">
+        <div id="listaIngresosWrapper" class="hidden mt-3">
+            <input type="text" id="buscadorIngresos" placeholder="Buscar por punto de venta o importe..." class="w-full border p-2 rounded mb-3 focus:ring-2 focus:ring-blue-500">
+            <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
@@ -64,6 +66,7 @@
                     <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando...</td></tr>
                 </tbody>
             </table>
+            </div>
         </div>
 
     </div>
