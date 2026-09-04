@@ -1658,6 +1658,15 @@ app.get('/api/productos/:id/stock', requirePermiso('insumos'), async (req, res) 
   }
 });
 
+// Encuentra el Punto de Venta "La Nave" (donde entra el stock nuevo por defecto).
+// Se busca por nombre en vez de tener el ID fijo, porque puede variar entre entornos.
+async function obtenerIdPuntoVentaNave() {
+  const { rows } = await pool.query(
+    `SELECT id FROM puntos_venta WHERE nombre ILIKE '%nave%' ORDER BY id ASC LIMIT 1`
+  );
+  return rows[0] ? rows[0].id : null;
+}
+
 function normalizarTipoStand(valor) {
   if (!valor) return null;
   const v = String(valor).trim().toUpperCase();
@@ -1684,9 +1693,8 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
     return res.status(400).json({ error: 'Falta el archivo Excel' });
   }
 
-  const { punto_venta_id } = req.body; // opcional: si se manda, también se carga el stock de esa columna
-
   try {
+    const idNave = await obtenerIdPuntoVentaNave();
     const libro = XLSX.read(req.file.buffer, { type: 'buffer' });
     const filasAImportar = [];
 
@@ -1744,19 +1752,26 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
       if (resultado.rows[0].es_nuevo) creados++;
       else actualizados++;
 
-      if (punto_venta_id && p.stock !== null) {
+      if (idNave && p.stock !== null) {
         await pool.query(
           `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
            VALUES ($1, $2, $3::numeric)
            ON CONFLICT (producto_id, punto_venta_id)
            DO UPDATE SET cantidad = $3::numeric`,
-          [resultado.rows[0].id, punto_venta_id, p.stock]
+          [resultado.rows[0].id, idNave, p.stock]
         );
         stockCargado++;
       }
     }
 
-    res.json({ ok: true, total: filasAImportar.length, creados, actualizados, stockCargado });
+    res.json({
+      ok: true,
+      total: filasAImportar.length,
+      creados,
+      actualizados,
+      stockCargado,
+      avisoSinNave: !idNave
+    });
   } catch (err) {
     console.error('Error POST /api/productos/importar-excel:', err.message);
     res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
@@ -1764,7 +1779,7 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
 });
 
 app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
-  const { nombre, tipo_stand, precio_unitario, punto_venta_id, stock } = req.body;
+  const { nombre, tipo_stand, precio_unitario, stock } = req.body;
 
   if (!nombre || !tipo_stand || !precio_unitario) {
     return res.status(400).json({ error: 'Nombre, Tipo_Stand y Precio Unitario son obligatorios' });
@@ -1782,14 +1797,17 @@ app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
     );
     const producto = rows[0];
 
-    if (punto_venta_id && stock !== undefined && stock !== '' && Number(stock) !== 0) {
-      await pool.query(
-        `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
-         VALUES ($1, $2, $3::numeric)
-         ON CONFLICT (producto_id, punto_venta_id)
-         DO UPDATE SET cantidad = $3::numeric`,
-        [producto.id, punto_venta_id, stock]
-      );
+    if (stock !== undefined && stock !== '' && Number(stock) !== 0) {
+      const idNave = await obtenerIdPuntoVentaNave();
+      if (idNave) {
+        await pool.query(
+          `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
+           VALUES ($1, $2, $3::numeric)
+           ON CONFLICT (producto_id, punto_venta_id)
+           DO UPDATE SET cantidad = $3::numeric`,
+          [producto.id, idNave, stock]
+        );
+      }
     }
 
     res.json(producto);

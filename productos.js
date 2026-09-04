@@ -5,19 +5,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let productosCache = [];
 
-    async function cargarPuntosVentaSelect() {
-        try {
-            const res = await fetch('/api/puntos-venta');
-            if (!res.ok) throw new Error('Error al cargar puntos de venta');
-            const puntosVenta = await res.json();
-            const opciones = puntosVenta.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
-            document.getElementById('puntoVentaStock').innerHTML = `<option value="">-- No cargar stock --</option>${opciones}`;
-            document.getElementById('puntoVentaImportacion').innerHTML = `<option value="">-- No cargar stock, solo catálogo --</option>${opciones}`;
-        } catch (err) {
-            console.error('Error cargando puntos de venta:', err);
-        }
-    }
-
     function claseBoton(activo) {
         const base = 'w-full h-12 flex items-center justify-center text-center px-2 rounded-lg text-xs transition border';
         return activo
@@ -286,7 +273,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 nombre: document.getElementById('nombre').value.trim(),
                 tipo_stand: tipoStand,
                 precio_unitario: document.getElementById('precioUnitario').value,
-                punto_venta_id: document.getElementById('puntoVentaStock').value || '',
                 stock: document.getElementById('stockInicial').value || ''
             };
 
@@ -327,16 +313,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const formData = new FormData();
         formData.append('archivo', archivo);
-        const puntoVentaImportacion = document.getElementById('puntoVentaImportacion').value;
-        if (puntoVentaImportacion) formData.append('punto_venta_id', puntoVentaImportacion);
 
         try {
             const res = await fetch('/api/productos/importar-excel', { method: 'POST', body: formData });
             const resultado = await res.json();
             if (!res.ok) throw new Error(resultado.error || 'Error al importar el archivo');
 
-            const stockTexto = resultado.stockCargado > 0 ? ` Stock cargado en ${resultado.stockCargado} producto(s).` : '';
-            resultadoImportacion.textContent = `Importación completada: ${resultado.creados} producto(s) nuevo(s), ${resultado.actualizados} actualizado(s) (de ${resultado.total} filas leídas).${stockTexto}`;
+            const stockTexto = resultado.stockCargado > 0 ? ` Stock cargado en ${resultado.stockCargado} producto(s) en "La Nave".` : '';
+            const avisoNave = resultado.avisoSinNave ? ' (No se pudo cargar el stock: no existe un Punto de Venta llamado "Nave" — créalo primero en Puntos de Venta.)' : '';
+            resultadoImportacion.textContent = `Importación completada: ${resultado.creados} producto(s) nuevo(s), ${resultado.actualizados} actualizado(s) (de ${resultado.total} filas leídas).${stockTexto}${avisoNave}`;
             resultadoImportacion.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
             resultadoImportacion.classList.remove('hidden');
 
@@ -353,6 +338,5 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    await cargarPuntosVentaSelect();
     cargarProductos();
 });
