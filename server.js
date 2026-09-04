@@ -278,11 +278,11 @@ app.get('/api/puntos-venta/todos', requirePermiso('puntos_venta'), async (req, r
 });
 
 app.post('/api/puntos-venta', requirePermiso('puntos_venta'), async (req, res) => {
-  const { nombre, direccion, tipo_stand } = req.body;
+  const { nombre, direccion, tipo_stand, universal } = req.body;
   try {
     const { rows } = await pool.query(
-      'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, activo, registrado_por) VALUES ($1, $2, $3, TRUE, $4) RETURNING *',
-      [nombre, direccion || null, tipo_stand || null, req.session.usuario.id]
+      'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, universal, activo, registrado_por) VALUES ($1, $2, $3, $4, TRUE, $5) RETURNING *',
+      [nombre, direccion || null, tipo_stand || null, !!universal, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -318,7 +318,7 @@ app.get('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res
 
 app.put('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res) => {
   const { id } = req.params;
-  const { nombre, direccion, tipo_stand } = req.body;
+  const { nombre, direccion, tipo_stand, universal } = req.body;
 
   if (!nombre) {
     return res.status(400).json({ error: 'Falta el nombre del punto de venta' });
@@ -326,8 +326,8 @@ app.put('/api/puntos-venta/:id', requirePermiso('puntos_venta'), async (req, res
 
   try {
     const { rows } = await pool.query(
-      'UPDATE puntos_venta SET nombre=$1, direccion=$2, tipo_stand=$3 WHERE id=$4 RETURNING *',
-      [nombre, direccion || null, tipo_stand || null, id]
+      'UPDATE puntos_venta SET nombre=$1, direccion=$2, tipo_stand=$3, universal=$4 WHERE id=$5 RETURNING *',
+      [nombre, direccion || null, tipo_stand || null, !!universal, id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Punto de venta no encontrado' });
     res.json(rows[0]);
@@ -2255,6 +2255,211 @@ app.delete('/api/albaranes/:id', requirePermiso('albaranes'), async (req, res) =
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// --- IN-OUT (Fichajes) ---
+
+// Empleado ligado a la cuenta de login actual (o null si el usuario no tiene ficha de empleado)
+async function obtenerEmpleadoDeUsuario(usuarioId) {
+  const { rows } = await pool.query('SELECT id FROM empleados WHERE usuario_id = $1', [usuarioId]);
+  return rows[0] ? rows[0].id : null;
+}
+
+function puedeFicharPorOtros(req) {
+  return !!(req.session.usuario.es_admin || (req.session.usuario.permisos && req.session.usuario.permisos.inout_terceros));
+}
+
+// Puntos de Venta activos (para los botones de arriba)
+app.get('/api/fichajes/puntos-venta', requirePermiso('inout'), async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT id, nombre, universal FROM puntos_venta WHERE activo = TRUE ORDER BY nombre ASC');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/fichajes/puntos-venta:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Empleados que se pueden fichar bajo un Punto de Venta: los suyos + los de cualquier PV "universal"
+app.get('/api/fichajes/panel', requirePermiso('inout'), async (req, res) => {
+  const { punto_venta_id } = req.query;
+  if (!punto_venta_id) return res.status(400).json({ error: 'Falta punto_venta_id' });
+
+  try {
+    const { rows: empleados } = await pool.query(
+      `SELECT e.id, e.nombre, e.usuario_id
+       FROM empleados e
+       WHERE e.estado = TRUE
+         AND (
+           e.punto_venta_id = $1
+           OR e.punto_venta_id IN (SELECT id FROM puntos_venta WHERE universal = TRUE)
+         )
+       ORDER BY e.nombre ASC`,
+      [punto_venta_id]
+    );
+
+    // Para cada empleado, mira si tiene un fichaje abierto (entrada sin salida)
+    const idsEmpleados = empleados.map(e => e.id);
+    let abiertos = [];
+    if (idsEmpleados.length > 0) {
+      const { rows } = await pool.query(
+        `SELECT DISTINCT ON (empleado_id) id, empleado_id, hora_entrada
+         FROM fichajes
+         WHERE empleado_id = ANY($1) AND hora_salida IS NULL
+         ORDER BY empleado_id, hora_entrada DESC`,
+        [idsEmpleados]
+      );
+      abiertos = rows;
+    }
+
+    const puedeTerceros = puedeFicharPorOtros(req);
+    const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+
+    const resultado = empleados.map(e => {
+      const abierto = abiertos.find(a => a.empleado_id === e.id);
+      return {
+        id: e.id,
+        nombre: e.nombre,
+        proxima_accion: abierto ? 'SALIDA' : 'ENTRADA',
+        fichaje_abierto_id: abierto ? abierto.id : null,
+        puede_ficharlo: puedeTerceros || e.id === miEmpleadoId
+      };
+    });
+
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error GET /api/fichajes/panel:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Registra Entrada o Salida (automático según el último fichaje abierto del empleado)
+app.post('/api/fichajes', requirePermiso('inout'), async (req, res) => {
+  const { empleado_id, punto_venta_id, hora } = req.body;
+
+  if (!empleado_id || !punto_venta_id) {
+    return res.status(400).json({ error: 'Empleado y Punto de Venta son obligatorios' });
+  }
+
+  const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+  if (empleado_id !== miEmpleadoId && !puedeFicharPorOtros(req)) {
+    return res.status(403).json({ error: 'No tienes permiso para fichar por otros empleados' });
+  }
+
+  const momento = hora ? new Date(hora) : new Date();
+  if (isNaN(momento.getTime())) {
+    return res.status(400).json({ error: 'Hora no válida' });
+  }
+
+  try {
+    const abierto = await pool.query(
+      `SELECT id FROM fichajes WHERE empleado_id = $1 AND hora_salida IS NULL ORDER BY hora_entrada DESC LIMIT 1`,
+      [empleado_id]
+    );
+
+    if (abierto.rows[0]) {
+      // Cierra el turno abierto con la Salida
+      const { rows } = await pool.query(
+        `UPDATE fichajes SET hora_salida = $1 WHERE id = $2 RETURNING *`,
+        [momento.toISOString(), abierto.rows[0].id]
+      );
+      return res.json({ ...rows[0], tipo: 'SALIDA' });
+    } else {
+      // Abre un turno nuevo con la Entrada
+      const { rows } = await pool.query(
+        `INSERT INTO fichajes (empleado_id, punto_venta_id, fecha, hora_entrada, registrado_por)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [empleado_id, punto_venta_id, momento.toISOString().slice(0, 10), momento.toISOString(), req.session.usuario.id]
+      );
+      return res.json({ ...rows[0], tipo: 'ENTRADA' });
+    }
+  } catch (err) {
+    console.error('Error POST /api/fichajes:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/fichajes', requirePermiso('inout'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT f.*, e.nombre AS empleado_nombre, pv.nombre AS punto_venta_nombre,
+              u.nombre AS registrado_por_nombre
+       FROM fichajes f
+       LEFT JOIN empleados e ON e.id = f.empleado_id
+       LEFT JOIN puntos_venta pv ON pv.id = f.punto_venta_id
+       LEFT JOIN usuarios u ON u.id = f.registrado_por
+       ORDER BY f.hora_entrada DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/fichajes:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/fichajes/:id', requirePermiso('inout'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM fichajes WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Fichaje no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/fichajes/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/fichajes/:id', requirePermiso('inout'), async (req, res) => {
+  const { id } = req.params;
+  const { empleado_id, punto_venta_id, hora_entrada, hora_salida } = req.body;
+
+  if (!empleado_id || !punto_venta_id || !hora_entrada) {
+    return res.status(400).json({ error: 'Empleado, Punto de Venta y Hora de Entrada son obligatorios' });
+  }
+
+  try {
+    const actual = await pool.query('SELECT empleado_id FROM fichajes WHERE id = $1', [id]);
+    if (!actual.rows[0]) return res.status(404).json({ error: 'Fichaje no encontrado' });
+
+    const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+    const esPropio = actual.rows[0].empleado_id === miEmpleadoId && empleado_id === miEmpleadoId;
+    if (!esPropio && !puedeFicharPorOtros(req)) {
+      return res.status(403).json({ error: 'No tienes permiso para editar fichajes de otros empleados' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE fichajes SET
+         empleado_id = $1, punto_venta_id = $2, fecha = $3, hora_entrada = $4, hora_salida = $5
+       WHERE id = $6
+       RETURNING *`,
+      [empleado_id, punto_venta_id, hora_entrada.slice(0, 10), hora_entrada, hora_salida || null, id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/fichajes/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/fichajes/:id', requirePermiso('inout'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const actual = await pool.query('SELECT empleado_id FROM fichajes WHERE id = $1', [id]);
+    if (!actual.rows[0]) return res.status(404).json({ error: 'Fichaje no encontrado' });
+
+    const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+    const esPropio = actual.rows[0].empleado_id === miEmpleadoId;
+    if (!esPropio && !puedeFicharPorOtros(req)) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar fichajes de otros empleados' });
+    }
+
+    await pool.query('DELETE FROM fichajes WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/fichajes/:id:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 font-medium text-gray-800">${pv.nombre || ''}</td>
                     <td class="p-3 text-gray-600">${pv.direccion || '-'}</td>
                     <td class="p-3 text-gray-600">${pv.tipo_stand || '-'}</td>
+                    <td class="p-3">${pv.universal ? '<span class="text-emerald-600 font-semibold">Sí</span>' : '-'}</td>
                     <td class="p-3">
                         <button class="btnToggleEstado px-2 py-1 rounded text-xs font-semibold transition ${pv.activo ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}" data-id="${pv.id}" data-activo="${pv.activo}">
                             ${pv.activo ? 'Activo' : 'Inactivo'}
@@ -108,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ['Nombre', pv.nombre],
             ['Dirección', pv.direccion],
             ['Tipo Stand', pv.tipo_stand],
+            ['Universal', pv.universal ? 'Sí' : 'No'],
             ['Estado', pv.activo ? 'Activo' : 'Inactivo'],
             ['Registrado por', pv.registrado_por_nombre
                 ? `${pv.registrado_por_nombre} — ${formatearFechaHora(pv.creado_en)}`
@@ -138,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editNombre').value = pv.nombre || '';
         document.getElementById('editDireccion').value = pv.direccion || '';
         document.getElementById('editTipoStand').value = pv.tipo_stand || '';
+        document.getElementById('editUniversal').checked = !!pv.universal;
 
         document.getElementById('modalEditar').classList.remove('hidden');
     }
@@ -157,7 +160,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const datos = {
             nombre: document.getElementById('editNombre').value.trim(),
             direccion: document.getElementById('editDireccion').value.trim(),
-            tipo_stand: document.getElementById('editTipoStand').value.trim()
+            tipo_stand: document.getElementById('editTipoStand').value.trim(),
+            universal: document.getElementById('editUniversal').checked
         };
 
         try {
@@ -198,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nombre = document.getElementById('nombre').value.trim();
             const direccion = document.getElementById('direccion').value.trim();
             const tipoStand = document.getElementById('tipoStand').value.trim();
+            const universal = document.getElementById('universal').checked;
 
             if (!nombre) return;
 
@@ -205,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/puntos-venta', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nombre, direccion, tipo_stand: tipoStand })
+                    body: JSON.stringify({ nombre, direccion, tipo_stand: tipoStand, universal })
                 });
                 if (!res.ok) throw new Error('Error al crear punto de venta');
 
