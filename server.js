@@ -1467,7 +1467,7 @@ app.delete('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), asyn
 app.get('/api/factura-cash', requirePermiso('factura_cash'), async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT f.id, f.fecha, f.proveedor_id, f.importe, f.observaciones,
+      `SELECT f.id, f.fecha, f.proveedor_nombre, f.punto_venta_id, f.importe, f.observaciones,
               f.factura_nombre_original, f.created_at,
               u.nombre AS registrado_por_nombre
        FROM factura_cash f
@@ -1485,7 +1485,7 @@ app.get('/api/factura-cash/:id', requirePermiso('factura_cash'), async (req, res
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT f.id, f.fecha, f.proveedor_id, f.importe, f.observaciones, f.factura_nombre_original,
+      `SELECT f.id, f.fecha, f.proveedor_nombre, f.punto_venta_id, f.importe, f.observaciones, f.factura_nombre_original,
               (f.factura_data IS NOT NULL) AS tiene_factura,
               f.created_at, u.nombre AS registrado_por_nombre
        FROM factura_cash f
@@ -1524,20 +1524,20 @@ app.get('/api/factura-cash/:id/factura', requirePermiso('factura_cash'), async (
 });
 
 app.post('/api/factura-cash', requirePermiso('factura_cash'), upload.single('factura'), async (req, res) => {
-  const { fecha, proveedor_id, importe, observaciones } = req.body;
+  const { fecha, proveedor_nombre, punto_venta_id, importe, observaciones } = req.body;
 
-  if (!fecha || !proveedor_id || !importe || !req.file) {
-    return res.status(400).json({ error: 'Fecha, proveedor, importe y factura son obligatorios' });
+  if (!fecha || !proveedor_nombre || !punto_venta_id || !importe || !req.file) {
+    return res.status(400).json({ error: 'Fecha, proveedor, punto de venta, importe y factura son obligatorios' });
   }
 
   try {
     const { rows } = await pool.query(
       `INSERT INTO factura_cash
-        (fecha, proveedor_id, importe, observaciones, factura_data, factura_mime, factura_nombre_original, registrado_por)
+        (fecha, proveedor_nombre, punto_venta_id, importe, observaciones, factura_data, factura_mime, factura_nombre_original, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, fecha, proveedor_id, importe, observaciones, factura_nombre_original`,
-      [fecha, proveedor_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, fecha, proveedor_nombre, punto_venta_id, importe, observaciones, factura_nombre_original`,
+      [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -1548,10 +1548,10 @@ app.post('/api/factura-cash', requirePermiso('factura_cash'), upload.single('fac
 
 app.put('/api/factura-cash/:id', requirePermiso('factura_cash'), upload.single('factura'), async (req, res) => {
   const { id } = req.params;
-  const { fecha, proveedor_id, importe, observaciones } = req.body;
+  const { fecha, proveedor_nombre, punto_venta_id, importe, observaciones } = req.body;
 
-  if (!fecha || !proveedor_id || !importe) {
-    return res.status(400).json({ error: 'Fecha, proveedor e importe son obligatorios' });
+  if (!fecha || !proveedor_nombre || !punto_venta_id || !importe) {
+    return res.status(400).json({ error: 'Fecha, proveedor, punto de venta e importe son obligatorios' });
   }
 
   try {
@@ -1559,18 +1559,18 @@ app.put('/api/factura-cash/:id', requirePermiso('factura_cash'), upload.single('
     if (req.file) {
       ({ rows } = await pool.query(
         `UPDATE factura_cash SET
-           fecha=$1, proveedor_id=$2, importe=$3, observaciones=$4,
-           factura_data=$5, factura_mime=$6, factura_nombre_original=$7
-         WHERE id=$8
+           fecha=$1, proveedor_nombre=$2, punto_venta_id=$3, importe=$4, observaciones=$5,
+           factura_data=$6, factura_mime=$7, factura_nombre_original=$8
+         WHERE id=$9
          RETURNING id`,
-        [fecha, proveedor_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+        [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, id]
       ));
     } else {
       ({ rows } = await pool.query(
-        `UPDATE factura_cash SET fecha=$1, proveedor_id=$2, importe=$3, observaciones=$4
-         WHERE id=$5
+        `UPDATE factura_cash SET fecha=$1, proveedor_nombre=$2, punto_venta_id=$3, importe=$4, observaciones=$5
+         WHERE id=$6
          RETURNING id`,
-        [fecha, proveedor_id, importe, observaciones || null, id]
+        [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, id]
       ));
     }
     if (!rows[0]) return res.status(404).json({ error: 'Factura no encontrada' });

@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Error al cargar el usuario actual:', err);
     }
 
+    if (esAdmin) {
+        document.getElementById('thAccion').classList.remove('hidden');
+    }
+
     function formatearFechaHora(rawFecha) {
         if (!rawFecha) return 'Fecha no disponible';
         const dateObj = new Date(rawFecha);
@@ -95,42 +99,50 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderizarTablaCierres(filtrarCierres(texto));
         } catch (error) {
             console.error('Error:', error);
-            const colspanVacio = 4;
+            const colspanVacio = esAdmin ? 10 : 9;
             tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-red-500">Error al cargar los datos del histórico.</td></tr>`;
         }
     }
 
     function renderizarTablaCierres(cierres) {
-            const colspanVacio = 4;
+        const colspanVacio = esAdmin ? 10 : 9;
 
-            if (!cierres || cierres.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-gray-500">No hay cierres que coincidan.</td></tr>`;
-                return;
-            }
+        if (!cierres || cierres.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="${colspanVacio}" class="p-4 text-center text-gray-500">No hay cierres que coincidan.</td></tr>`;
+            return;
+        }
 
-            tbody.innerHTML = cierres.map(c => {
-                const { fechaFormateada, puntoVenta, cashNeto } = calcularTotales(c);
+        tbody.innerHTML = cierres.map(c => {
+            const { fechaFormateada, puntoVenta, efectivo, tarjeta, totalBruto, gastos, adelantos, totalGastos, totalAdelantos, cashNeto } = calcularTotales(c);
+            const detallesHtml = construirDetallesHtml(gastos, adelantos);
 
-                const opcionesAdmin = esAdmin
-                    ? `<option value="editar">Editar</option><option value="eliminar">Eliminar</option>`
-                    : '';
+            const celdaAccion = esAdmin ? `
+                <td class="p-3">
+                    <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${c.id}">
+                        <option value="">Acción...</option>
+                        <option value="detalle">Detalle</option>
+                        <option value="editar">Editar</option>
+                        <option value="eliminar">Eliminar</option>
+                    </select>
+                </td>` : '';
 
-                return `
-                    <tr class="hover:bg-gray-50 border-b">
-                        <td class="p-3 text-gray-700">${fechaFormateada}</td>
-                        <td class="p-3 font-medium text-gray-800">${puntoVenta}</td>
-                        <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
-                        <td class="p-3">
-                            <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${c.id}">
-                                <option value="">Acción...</option>
-                                <option value="detalle">Detalle</option>
-                                ${opcionesAdmin}
-                            </select>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            return `
+                <tr class="hover:bg-gray-50 border-b">
+                    <td class="p-3 text-gray-700">${fechaFormateada}</td>
+                    <td class="p-3 font-medium text-gray-800">${puntoVenta}</td>
+                    <td class="p-3 text-gray-600">${efectivo.toFixed(2)} €</td>
+                    <td class="p-3 text-gray-600">${tarjeta.toFixed(2)} €</td>
+                    <td class="p-3 font-semibold text-gray-900">${totalBruto.toFixed(2)} €</td>
+                    <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
+                    <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
+                    <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
+                    <td class="p-3">${detallesHtml}</td>
+                    ${celdaAccion}
+                </tr>
+            `;
+        }).join('');
 
+        if (esAdmin) {
             document.querySelectorAll('.accionSelect').forEach(sel => {
                 sel.addEventListener('change', async () => {
                     const id = sel.dataset.id;
@@ -146,6 +158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
             });
+        }
     }
 
     // --- Detalle (solo administrador) ---

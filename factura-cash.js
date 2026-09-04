@@ -1,27 +1,26 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const form = document.getElementById('formFactura');
     const tabla = document.getElementById('tablaFacturas');
-    const selectProveedor = document.getElementById('proveedor');
 
-    let proveedoresCache = [];
+    let puntosVentaCache = [];
 
-    async function cargarProveedoresSelect() {
+    async function cargarPuntosVentaSelect() {
         try {
-            const res = await fetch('/api/proveedores-dropdown');
-            if (!res.ok) throw new Error('Error al cargar proveedores');
-            proveedoresCache = await res.json();
+            const res = await fetch('/api/puntos-venta');
+            if (!res.ok) throw new Error('Error al cargar puntos de venta');
+            puntosVentaCache = await res.json();
 
-            const opciones = proveedoresCache.map(p => `<option value="${p.id}">${p.nombre_proveedor}</option>`).join('');
-            selectProveedor.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
-            document.getElementById('editProveedor').innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
+            const opciones = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            document.getElementById('puntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
+            document.getElementById('editPuntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
         } catch (err) {
-            console.error('Error cargando proveedores:', err);
+            console.error('Error cargando puntos de venta:', err);
         }
     }
 
-    function nombreProveedor(id) {
-        const p = proveedoresCache.find(x => String(x.id) === String(id));
-        return p ? p.nombre_proveedor : '-';
+    function nombrePuntoVenta(id) {
+        const pv = puntosVentaCache.find(p => String(p.id) === String(id));
+        return pv ? pv.nombre : '-';
     }
 
     function formatearFecha(f) {
@@ -52,8 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         iconoToggleLista.style.transform = abierta ? 'rotate(0deg)' : 'rotate(180deg)';
     });
 
-    // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
-    // --- Buscador en tiempo real (proveedor o importe) ---
+    // --- Buscador en tiempo real (proveedor, punto de venta o importe) ---
     let facturasCache = [];
     document.getElementById('buscadorFacturas').addEventListener('input', (e) => {
         renderizarTablaFacturas(filtrarFacturas(e.target.value));
@@ -63,11 +61,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const q = (texto || '').trim().toLowerCase();
         if (!q) return facturasCache;
         return facturasCache.filter(f => {
-            const campos = [nombreProveedor(f.proveedor_id), String(f.importe || '')];
+            const campos = [f.proveedor_nombre, nombrePuntoVenta(f.punto_venta_id), String(f.importe || '')];
             return campos.some(c => (c || '').toLowerCase().includes(q));
         });
     }
 
+    // --- Cargar lista (ya viene ordenada de más nuevo a más antiguo desde el backend) ---
     async function cargarFacturas() {
         try {
             const res = await fetch('/api/factura-cash');
@@ -80,20 +79,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderizarTablaFacturas(filtrarFacturas(texto));
         } catch (err) {
             console.error(err);
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar las facturas.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar las facturas.</td></tr>`;
         }
     }
 
     function renderizarTablaFacturas(datos) {
         if (!datos || datos.length === 0) {
-            tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay facturas que coincidan.</td></tr>`;
+            tabla.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay facturas que coincidan.</td></tr>`;
             return;
         }
 
         tabla.innerHTML = datos.map(f => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(f.fecha)}</td>
-                    <td class="p-3 text-gray-600">${nombreProveedor(f.proveedor_id)}</td>
+                    <td class="p-3 text-gray-600">${f.proveedor_nombre || '-'}</td>
+                    <td class="p-3 text-gray-600">${nombrePuntoVenta(f.punto_venta_id)}</td>
                     <td class="p-3 text-gray-600">${formatearImporte(f.importe)}</td>
                     <td class="p-3">
                         <a href="/api/factura-cash/${f.id}/factura" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
@@ -137,7 +137,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const filas = [
                 ['Fecha', formatearFecha(f.fecha)],
-                ['Proveedor', nombreProveedor(f.proveedor_id)],
+                ['Proveedor', f.proveedor_nombre || '-'],
+                ['Punto de Venta', nombrePuntoVenta(f.punto_venta_id)],
                 ['Importe', formatearImporte(f.importe)],
                 ['Observaciones', f.observaciones || '-'],
                 ['Factura', f.tiene_factura
@@ -176,7 +177,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             document.getElementById('editId').value = f.id;
             document.getElementById('editFecha').value = f.fecha ? f.fecha.substring(0, 10) : '';
-            document.getElementById('editProveedor').value = f.proveedor_id || '';
+            document.getElementById('editProveedor').value = f.proveedor_nombre || '';
+            document.getElementById('editPuntoVenta').value = f.punto_venta_id || '';
             document.getElementById('editImporte').value = f.importe || '';
             document.getElementById('editObservaciones').value = f.observaciones || '';
             document.getElementById('editFactura').value = '';
@@ -202,7 +204,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const id = document.getElementById('editId').value;
         const formData = new FormData();
         formData.append('fecha', document.getElementById('editFecha').value);
-        formData.append('proveedor_id', document.getElementById('editProveedor').value);
+        formData.append('proveedor_nombre', document.getElementById('editProveedor').value.trim());
+        formData.append('punto_venta_id', document.getElementById('editPuntoVenta').value);
         formData.append('importe', document.getElementById('editImporte').value);
         formData.append('observaciones', document.getElementById('editObservaciones').value.trim());
 
@@ -245,7 +248,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const formData = new FormData();
             formData.append('fecha', document.getElementById('fecha').value);
-            formData.append('proveedor_id', document.getElementById('proveedor').value);
+            formData.append('proveedor_nombre', document.getElementById('proveedor').value.trim());
+            formData.append('punto_venta_id', document.getElementById('puntoVenta').value);
             formData.append('importe', document.getElementById('importe').value);
             formData.append('observaciones', document.getElementById('observaciones').value.trim());
             formData.append('factura', document.getElementById('factura').files[0]);
@@ -263,6 +267,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    await cargarProveedoresSelect();
+    await cargarPuntosVentaSelect();
     await cargarFacturas();
 });
