@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { Resend } from 'resend';
+import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
@@ -60,7 +61,9 @@ const PAGE_PERMISOS = {
   '/proveedores.html': 'proveedores',
   '/empleados.html': 'empleados',
   '/base-punto-venta.html': 'base_punto_venta',
-  '/factura-cash.html': 'factura_cash'
+  '/factura-cash.html': 'factura_cash',
+  '/productos.html': 'insumos',
+  '/albaranes.html': 'albaranes'
 };
 
 const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
@@ -1577,6 +1580,405 @@ app.delete('/api/factura-cash/:id', requirePermiso('factura_cash'), async (req, 
   } catch (err) {
     console.error('Error DELETE /api/factura-cash/:id:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- INSUMOS (Productos + Stock) ---
+
+const TIPOS_STAND_VALIDOS = ['CHOCOBERRIES', 'CARIBBEAN', 'MACONDO', 'KOKO BLENDS'];
+const TIPOS_ALBARAN_VALIDOS = ['INICIAL', 'FINAL', 'NORMAL'];
+
+app.get('/api/productos', requirePermiso('insumos'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, u.nombre AS registrado_por_nombre
+       FROM productos p
+       LEFT JOIN usuarios u ON u.id = p.registrado_por
+       ORDER BY p.tipo_stand ASC, p.nombre ASC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/productos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lista ligera para la rejilla de Albaranes (filtrable por tipo_stand), solo activos
+app.get('/api/productos-dropdown', requirePermiso('albaranes'), async (req, res) => {
+  const { tipo_stand } = req.query;
+  try {
+    const params = [];
+    let query = 'SELECT id, nombre, precio_unitario, tipo_stand FROM productos WHERE activo = TRUE';
+    if (tipo_stand) {
+      params.push(tipo_stand);
+      query += ` AND tipo_stand = $${params.length}`;
+    }
+    query += ' ORDER BY nombre ASC';
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/productos-dropdown:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM productos WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/productos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stock del producto desglosado por punto de venta (para el Detalle en Insumos)
+app.get('/api/productos/:id/stock', requirePermiso('insumos'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT ps.punto_venta_id, ps.cantidad, pv.nombre AS punto_venta_nombre
+       FROM producto_stock ps
+       JOIN puntos_venta pv ON pv.id = ps.punto_venta_id
+       WHERE ps.producto_id = $1 AND ps.cantidad <> 0
+       ORDER BY pv.nombre ASC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/productos/:id/stock:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function normalizarTipoStand(valor) {
+  if (!valor) return null;
+  const v = String(valor).trim().toUpperCase();
+  return TIPOS_STAND_VALIDOS.find(t => v === t || v.includes(t)) || null;
+}
+
+function obtenerValorColumna(fila, nombresPosibles) {
+  for (const clave of Object.keys(fila)) {
+    const claveNorm = clave.trim().toUpperCase().replace(/[_\s]+/g, ' ');
+    for (const posible of nombresPosibles) {
+      if (claveNorm === posible.toUpperCase()) {
+        return fila[clave];
+      }
+    }
+  }
+  return undefined;
+}
+
+// Importa el catálogo desde un Excel. Admite varias hojas (una por Tipo_Stand);
+// si la hoja no trae columna TIPO_STAND, se infiere del nombre de la propia hoja.
+// Reimportar el mismo archivo actualiza el precio en vez de duplicar (nombre+tipo_stand únicos).
+app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const filasAImportar = [];
+
+    for (const nombreHoja of libro.SheetNames) {
+      const hoja = libro.Sheets[nombreHoja];
+      const filas = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+      const tipoStandDeHoja = normalizarTipoStand(nombreHoja);
+
+      for (const fila of filas) {
+        const nombreProducto = obtenerValorColumna(fila, ['PRODUCTO', 'NOMBRE']);
+        const precioUnitario = obtenerValorColumna(fila, ['PRECIO UNITARIO', 'PRECIO', 'PRECIO_UNITARIO']);
+        const tipoStandDeFila = normalizarTipoStand(obtenerValorColumna(fila, ['TIPO_STAND', 'TIPO STAND', 'STAND']));
+        const tipoStand = tipoStandDeFila || tipoStandDeHoja;
+
+        if (!nombreProducto || !tipoStand || precioUnitario === undefined || precioUnitario === '') continue;
+
+        const precioNumero = parseFloat(String(precioUnitario).replace(',', '.'));
+        if (isNaN(precioNumero)) continue;
+
+        filasAImportar.push({
+          nombre: String(nombreProducto).trim(),
+          tipo_stand: tipoStand,
+          precio_unitario: precioNumero
+        });
+      }
+    }
+
+    if (filasAImportar.length === 0) {
+      return res.status(400).json({
+        error: 'No se encontraron filas válidas. Revisa que el Excel tenga columnas Producto y Precio Unitario, y que cada hoja se llame (o contenga) el Tipo_Stand: CHOCOBERRIES, CARIBBEAN, MACONDO o KOKO BLENDS.'
+      });
+    }
+
+    let creados = 0;
+    let actualizados = 0;
+
+    for (const p of filasAImportar) {
+      const resultado = await pool.query(
+        `INSERT INTO productos (nombre, tipo_stand, precio_unitario, registrado_por)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (nombre, tipo_stand)
+         DO UPDATE SET precio_unitario = EXCLUDED.precio_unitario
+         RETURNING (xmax = 0) AS es_nuevo`,
+        [p.nombre, p.tipo_stand, p.precio_unitario, req.session.usuario.id]
+      );
+      if (resultado.rows[0].es_nuevo) creados++;
+      else actualizados++;
+    }
+
+    res.json({ ok: true, total: filasAImportar.length, creados, actualizados });
+  } catch (err) {
+    console.error('Error POST /api/productos/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
+app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
+  const { nombre, tipo_stand, precio_unitario } = req.body;
+
+  if (!nombre || !tipo_stand || !precio_unitario) {
+    return res.status(400).json({ error: 'Nombre, Tipo_Stand y Precio Unitario son obligatorios' });
+  }
+  if (!TIPOS_STAND_VALIDOS.includes(tipo_stand)) {
+    return res.status(400).json({ error: 'Tipo_Stand no válido' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO productos (nombre, tipo_stand, precio_unitario, registrado_por)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [nombre, tipo_stand, precio_unitario, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/productos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
+  const { id } = req.params;
+  const { nombre, tipo_stand, precio_unitario } = req.body;
+
+  if (!nombre || !tipo_stand || !precio_unitario) {
+    return res.status(400).json({ error: 'Nombre, Tipo_Stand y Precio Unitario son obligatorios' });
+  }
+  if (!TIPOS_STAND_VALIDOS.includes(tipo_stand)) {
+    return res.status(400).json({ error: 'Tipo_Stand no válido' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'UPDATE productos SET nombre=$1, tipo_stand=$2, precio_unitario=$3 WHERE id=$4 RETURNING *',
+      [nombre, tipo_stand, precio_unitario, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/productos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/productos/:id/estado', requirePermiso('insumos'), async (req, res) => {
+  const { id } = req.params;
+  const { activo } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'UPDATE productos SET activo = $1 WHERE id = $2 RETURNING *',
+      [activo, id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PATCH /api/productos/:id/estado:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM productos WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/productos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- ALBARANES ---
+
+app.get('/api/albaranes', requirePermiso('albaranes'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.*, u.nombre AS registrado_por_nombre
+       FROM albaranes a
+       LEFT JOIN usuarios u ON u.id = a.registrado_por
+       ORDER BY a.fecha DESC, a.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/albaranes:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/albaranes/:id', requirePermiso('albaranes'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const cab = await pool.query(
+      `SELECT a.*, u.nombre AS registrado_por_nombre
+       FROM albaranes a
+       LEFT JOIN usuarios u ON u.id = a.registrado_por
+       WHERE a.id = $1`,
+      [id]
+    );
+    if (!cab.rows[0]) return res.status(404).json({ error: 'Albarán no encontrado' });
+
+    const detalle = await pool.query(
+      'SELECT * FROM albaran_detalle WHERE albaran_id = $1 ORDER BY producto_nombre ASC',
+      [id]
+    );
+
+    res.json({ ...cab.rows[0], lineas: detalle.rows });
+  } catch (err) {
+    console.error('Error GET /api/albaranes/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/albaranes', requirePermiso('albaranes'), async (req, res) => {
+  const { fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, lineas } = req.body;
+
+  if (!fecha || !punto_venta_origen_id || !punto_venta_destino_id || !tipo_stand || !tipo_albaran) {
+    return res.status(400).json({ error: 'Fecha, origen, destino, Tipo_Stand y Tipo de Albarán son obligatorios' });
+  }
+  if (String(punto_venta_origen_id) === String(punto_venta_destino_id)) {
+    return res.status(400).json({ error: 'El punto de venta origen y destino no pueden ser el mismo' });
+  }
+  if (!TIPOS_STAND_VALIDOS.includes(tipo_stand)) {
+    return res.status(400).json({ error: 'Tipo_Stand no válido' });
+  }
+  if (!TIPOS_ALBARAN_VALIDOS.includes(tipo_albaran)) {
+    return res.status(400).json({ error: 'Tipo de Albarán no válido' });
+  }
+
+  const lineasValidas = (Array.isArray(lineas) ? lineas : []).filter(l => l.producto_id && Number(l.cantidad) > 0);
+  if (lineasValidas.length === 0) {
+    return res.status(400).json({ error: 'Añade al menos un producto con cantidad mayor que 0' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    let total = 0;
+    const detalles = [];
+    for (const linea of lineasValidas) {
+      const prodRes = await client.query('SELECT nombre, precio_unitario FROM productos WHERE id = $1', [linea.producto_id]);
+      if (!prodRes.rows[0]) continue;
+      const cantidad = Number(linea.cantidad);
+      const precio_unitario = Number(prodRes.rows[0].precio_unitario);
+      const subtotal = cantidad * precio_unitario;
+      total += subtotal;
+      detalles.push({
+        producto_id: linea.producto_id,
+        producto_nombre: prodRes.rows[0].nombre,
+        cantidad,
+        precio_unitario,
+        subtotal
+      });
+    }
+
+    const cabeceraRes = await client.query(
+      `INSERT INTO albaranes
+        (fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, total_albaran, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, total, req.session.usuario.id]
+    );
+    const albaran = cabeceraRes.rows[0];
+
+    for (const d of detalles) {
+      await client.query(
+        `INSERT INTO albaran_detalle (albaran_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [albaran.id, d.producto_id, d.producto_nombre, d.cantidad, d.precio_unitario, d.subtotal]
+      );
+
+      // Resta del origen (crea la fila de stock si no existía, en negativo)
+      await client.query(
+        `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
+         VALUES ($1, $2, -$3)
+         ON CONFLICT (producto_id, punto_venta_id)
+         DO UPDATE SET cantidad = producto_stock.cantidad - $3`,
+        [d.producto_id, punto_venta_origen_id, d.cantidad]
+      );
+
+      // Suma al destino
+      await client.query(
+        `INSERT INTO producto_stock (producto_id, punto_venta_id, cantidad)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (producto_id, punto_venta_id)
+         DO UPDATE SET cantidad = producto_stock.cantidad + $3`,
+        [d.producto_id, punto_venta_destino_id, d.cantidad]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json(albaran);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error POST /api/albaranes:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/albaranes/:id', requirePermiso('albaranes'), async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const cab = await client.query('SELECT * FROM albaranes WHERE id = $1', [id]);
+    if (!cab.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Albarán no encontrado' });
+    }
+    const { punto_venta_origen_id, punto_venta_destino_id } = cab.rows[0];
+
+    const detalle = await client.query('SELECT * FROM albaran_detalle WHERE albaran_id = $1', [id]);
+
+    // Revierte el movimiento de stock: devuelve al origen, quita del destino
+    for (const d of detalle.rows) {
+      if (d.producto_id) {
+        await client.query(
+          'UPDATE producto_stock SET cantidad = cantidad + $1 WHERE producto_id = $2 AND punto_venta_id = $3',
+          [d.cantidad, d.producto_id, punto_venta_origen_id]
+        );
+        await client.query(
+          'UPDATE producto_stock SET cantidad = cantidad - $1 WHERE producto_id = $2 AND punto_venta_id = $3',
+          [d.cantidad, d.producto_id, punto_venta_destino_id]
+        );
+      }
+    }
+
+    await client.query('DELETE FROM albaranes WHERE id = $1', [id]); // borra el detalle en cascada
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error DELETE /api/albaranes/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -43,7 +43,9 @@
         { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
         { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },
         { label: 'Base Punto de Venta', href: '/base-punto-venta.html', permiso: 'base_punto_venta' },
-        { label: 'Factura Cash', href: '/factura-cash.html', permiso: 'factura_cash' }
+        { label: 'Factura Cash', href: '/factura-cash.html', permiso: 'factura_cash' },
+        { label: 'Insumos', href: '/productos.html', permiso: 'insumos' },
+        { label: 'Albaranes', href: '/albaranes.html', permiso: 'albaranes' }
     ];
 
     function rutaActual() {

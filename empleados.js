@@ -45,7 +45,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         { clave: 'proveedores', label: 'Proveedores' },
         { clave: 'empleados', label: 'Empleados' },
         { clave: 'base_punto_venta', label: 'Base Punto de Venta' },
-        { clave: 'factura_cash', label: 'Factura Cash' }
+        { clave: 'factura_cash', label: 'Factura Cash' },
+        { clave: 'insumos', label: 'Insumos' },
+        { clave: 'albaranes', label: 'Albaranes' }
     ];
 
     // "Activar todos" enciende todo MENOS estas (más sensibles / de gestión), quedan como estaban
