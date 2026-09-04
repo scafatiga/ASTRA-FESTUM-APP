@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(s.punto_venta_id)}</td>
                     <td class="p-3 text-gray-600">${s.socio}</td>
                     <td class="p-3 text-gray-600">${s.tipo}</td>
-                    <td class="p-3 text-gray-600">${formatearImporte(s.importe)}</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(s.importe)}</td>
                     <td class="p-3 text-gray-500 text-xs">${s.registrado_por_nombre || '-'}<br>${formatearFechaHora(s.created_at)}</td>
                     <td class="p-3">
                         <select class="accionSelect border rounded px-2 py-1.5 text-xs" data-id="${s.id}">

@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const selectOrigen = document.getElementById('puntoVentaOrigen');
     const selectDestino = document.getElementById('puntoVentaDestino');
     const bloqueProductos = document.getElementById('bloqueProductos');
+    const barraTotalAlta = document.getElementById('barraTotalAlta');
     const tablaProductosGrid = document.getElementById('tablaProductosGrid');
 
     const TIPOS_STAND = ['CHOCOBERRIES', 'CARIBBEAN', 'MACONDO', 'KOKO BLENDS'];
@@ -71,6 +72,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tablaEl = document.getElementById(tablaId);
         if (!tipoStand) {
             bloqueEl.classList.add('hidden');
+            if (bloqueEl === bloqueProductos) barraTotalAlta.classList.add('hidden');
             tablaEl.innerHTML = '';
             return;
         }
@@ -102,10 +104,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             bloqueEl.classList.remove('hidden');
+            if (bloqueEl === bloqueProductos) barraTotalAlta.classList.remove('hidden');
             actualizarTotalesEn(tablaId, totalEl);
         } catch (err) {
             console.error(err);
         }
+    }
+
+    function leerCantidad(valor) {
+        const n = parseFloat(String(valor || '').replace(',', '.'));
+        return isNaN(n) ? 0 : n;
     }
 
     function actualizarTotalesEn(tablaId, totalElId) {
@@ -113,7 +121,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let total = 0;
         tablaEl.querySelectorAll('.producto-fila').forEach(fila => {
             const precio = Number(fila.dataset.precio) || 0;
-            const cantidad = Number(fila.querySelector('.cantidad-input').value) || 0;
+            const cantidad = leerCantidad(fila.querySelector('.cantidad-input').value);
             const subtotal = precio * cantidad;
             fila.querySelector('.subtotal-celda').textContent = formatearImporte(subtotal);
             total += subtotal;
@@ -124,7 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function recogerLineasDe(tablaId) {
         const lineas = [];
         document.getElementById(tablaId).querySelectorAll('.cantidad-input').forEach(input => {
-            const cantidad = Number(input.value) || 0;
+            const cantidad = leerCantidad(input.value);
             if (cantidad > 0) {
                 lineas.push({ producto_id: input.dataset.productoId, cantidad });
             }
@@ -205,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(a.punto_venta_destino_id)}</td>
                     <td class="p-3 text-gray-600">${a.tipo_stand}</td>
                     <td class="p-3 text-gray-600">${a.tipo_albaran}</td>
-                    <td class="p-3 font-semibold text-gray-800">${formatearImporte(a.total_albaran)}</td>
+                    <td class="p-3 font-semibold text-gray-800 whitespace-nowrap">${formatearImporte(a.total_albaran)}</td>
                     <td class="p-3">
                         <a href="/api/albaranes/${a.id}/pdf" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
                         <span class="text-gray-300">|</span>
@@ -448,6 +456,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor);
                 });
                 bloqueProductos.classList.add('hidden');
+                barraTotalAlta.classList.add('hidden');
+                document.getElementById('totalAlbaran').textContent = '0.00 €';
                 cargarAlbaranes();
             } catch (err) {
                 console.error(err);

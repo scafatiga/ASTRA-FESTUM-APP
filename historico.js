@@ -130,12 +130,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-700">${fechaFormateada}</td>
                     <td class="p-3 font-medium text-gray-800">${puntoVenta}</td>
-                    <td class="p-3 text-gray-600">${efectivo.toFixed(2)} €</td>
-                    <td class="p-3 text-gray-600">${tarjeta.toFixed(2)} €</td>
-                    <td class="p-3 font-semibold text-gray-900">${totalBruto.toFixed(2)} €</td>
-                    <td class="p-3 text-red-600 font-medium">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
-                    <td class="p-3 text-blue-600 font-medium">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
-                    <td class="p-3 font-bold ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${efectivo.toFixed(2)} €</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${tarjeta.toFixed(2)} €</td>
+                    <td class="p-3 font-semibold text-gray-900 whitespace-nowrap">${totalBruto.toFixed(2)} €</td>
+                    <td class="p-3 text-red-600 font-medium whitespace-nowrap">${totalGastos > 0 ? '-' + totalGastos.toFixed(2) + ' €' : '0.00 €'}</td>
+                    <td class="p-3 text-blue-600 font-medium whitespace-nowrap">${totalAdelantos > 0 ? '-' + totalAdelantos.toFixed(2) + ' €' : '0.00 €'}</td>
+                    <td class="p-3 font-bold whitespace-nowrap ${cashNeto < 0 ? 'text-red-700' : 'text-emerald-700'}">${cashNeto.toFixed(2)} €</td>
                     <td class="p-3">${detallesHtml}</td>
                     ${celdaAccion}
                 </tr>

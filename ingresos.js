@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         tabla.innerHTML = datos.map(i => `
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(i.fecha)}</td>
-                    <td class="p-3 text-gray-600">${formatearImporte(i.importe)}</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(i.importe)}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(i.punto_venta_id)}</td>
                     <td class="p-3">
                         <a href="/api/ingresos/${i.id}/comprobante" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>

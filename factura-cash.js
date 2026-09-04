@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(f.fecha)}</td>
                     <td class="p-3 text-gray-600">${f.proveedor_nombre || '-'}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(f.punto_venta_id)}</td>
-                    <td class="p-3 text-gray-600">${formatearImporte(f.importe)}</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(f.importe)}</td>
                     <td class="p-3">
                         <a href="/api/factura-cash/${f.id}/factura" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>
                         <span class="text-gray-300">|</span>

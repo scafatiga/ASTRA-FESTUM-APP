@@ -40,11 +40,17 @@
                 </div>
             </div>
 
+            <!-- Venta Total: se calcula sola (Efectivo + Tarjeta) -->
+            <div class="bg-gray-50 border rounded-lg p-3 flex justify-between items-center">
+                <span class="text-sm font-medium text-gray-700">Venta Total:</span>
+                <span id="ventaTotal" class="text-lg font-bold text-gray-900">0.00 €</span>
+            </div>
+
             <!-- Sección de Gastos -->
             <div class="border-t pt-4">
                 <div class="flex justify-between items-center mb-2">
                     <label class="block text-sm font-medium text-gray-700">Gastos / Compras Físicas</label>
-                    <button type="button" id="btnAgregarGasto" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded transition">
+                    <button type="button" id="btnAgregarGasto" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded transition w-40 text-center">
                         + Agregar Gasto
                     </button>
                 </div>
@@ -57,13 +63,19 @@
             <div class="border-t pt-4">
                 <div class="flex justify-between items-center mb-2">
                     <label class="block text-sm font-medium text-gray-700">Adelantos / Abonos a Empleados</label>
-                    <button type="button" id="btnAgregarAdelanto" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded transition">
+                    <button type="button" id="btnAgregarAdelanto" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded transition w-40 text-center">
                         + Agregar Adelanto
                     </button>
                 </div>
                 <div id="adelantosContainer" class="space-y-2">
                     <!-- Las filas de adelantos se insertan aquí dinámicamente -->
                 </div>
+            </div>
+
+            <!-- Cash a Ingresar: se calcula solo (Efectivo - Gastos - Adelantos) -->
+            <div class="bg-gray-50 border rounded-lg p-3 flex justify-between items-center">
+                <span class="text-sm font-medium text-gray-700">Cash a Ingresar:</span>
+                <span id="cashAIngresar" class="text-lg font-bold text-gray-900">0.00 €</span>
             </div>
 
             <!-- Observaciones -->

@@ -38,7 +38,7 @@
     // Todo lo que ya está construido vive en el menú lateral (☰), para no mezclarlo
     // con los 5 accesos de arriba, que replican tal cual la barra de AppSheet.
     const MENU_ITEMS = [
-        { label: 'Registro Cierres Diarios', href: '/historico.html', permiso: 'historico' },
+        { label: 'Registro Cierres Diarios', href: '/cierre.html', permiso: 'cierre' },
         { label: 'Puntos de Venta', href: '/puntos-venta.html', permiso: 'puntos_venta' },
         { label: 'Proveedores', href: '/proveedores.html', permiso: 'proveedores' },
         { label: 'Empleados', href: '/empleados.html', permiso: 'empleados' },

@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <tr class="hover:bg-gray-50 border-b">
                     <td class="p-3 text-gray-800 font-medium">${formatearFecha(g.fecha)}</td>
                     <td class="p-3 text-gray-600">${nombreProveedor(g.proveedor_id)}</td>
-                    <td class="p-3 text-gray-600">${formatearImporte(g.importe)}</td>
+                    <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(g.importe)}</td>
                     <td class="p-3 text-gray-600">${nombrePuntoVenta(g.punto_venta_id)}</td>
                     <td class="p-3">
                         <a href="/api/gastos-tarjeta/${g.id}/factura" target="_blank" class="text-blue-600 hover:underline text-xs">Ver</a>

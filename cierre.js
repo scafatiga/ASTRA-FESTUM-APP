@@ -4,6 +4,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const gastosContainer = document.getElementById('gastosContainer');
     const adelantosContainer = document.getElementById('adelantosContainer');
     const cierreForm = document.getElementById('cierreForm');
+    const totalEfectivoInput = document.getElementById('totalEfectivo');
+    const totalTarjetaInput = document.getElementById('totalTarjeta');
+
+    const iconoPapelera = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/>
+            <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+        </svg>`;
 
     // --- Carga de empleados desde el backend (solo se usa en Adelantos) ---
     let empleadosCache = [];
@@ -31,6 +41,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await cargarEmpleados();
 
+    // --- Cálculos automáticos: Venta Total y Cash a Ingresar ---
+    function formatearImporte(n) {
+        return Number(n || 0).toFixed(2) + ' €';
+    }
+
+    function actualizarCalculos() {
+        const efectivo = parseFloat(totalEfectivoInput.value) || 0;
+        const tarjeta = parseFloat(totalTarjetaInput.value) || 0;
+        const ventaTotal = efectivo + tarjeta;
+
+        let sumaGastos = 0;
+        document.querySelectorAll('.gasto-importe').forEach(input => {
+            sumaGastos += parseFloat(input.value) || 0;
+        });
+
+        let sumaAdelantos = 0;
+        document.querySelectorAll('.adelanto-importe').forEach(input => {
+            sumaAdelantos += parseFloat(input.value) || 0;
+        });
+
+        const cashAIngresar = efectivo - sumaGastos - sumaAdelantos;
+
+        document.getElementById('ventaTotal').textContent = formatearImporte(ventaTotal);
+        document.getElementById('cashAIngresar').textContent = formatearImporte(cashAIngresar);
+    }
+
+    totalEfectivoInput.addEventListener('input', actualizarCalculos);
+    totalTarjetaInput.addEventListener('input', actualizarCalculos);
+    gastosContainer.addEventListener('input', actualizarCalculos);
+    adelantosContainer.addEventListener('input', actualizarCalculos);
+
     // --- Filas dinámicas ---
 
     function agregarGastoFila() {
@@ -43,8 +84,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <option value="Alicante">Alicante</option>
                 <option value="Madrid">Madrid</option>
             </select>
-            <button type="button" class="bg-red-500 hover:bg-red-600 text-white rounded text-sm transition min-w-0 w-full md:w-auto py-2 md:px-3 md:py-2" onclick="this.parentElement.remove()">✕</button>
+            <button type="button" class="btnEliminarFila text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition min-w-0 w-full md:w-auto flex items-center justify-center py-2 md:px-3 md:py-2" title="Eliminar">${iconoPapelera}</button>
         `;
+        div.querySelector('.btnEliminarFila').addEventListener('click', () => {
+            div.remove();
+            actualizarCalculos();
+        });
         gastosContainer.appendChild(div);
     }
 
@@ -60,24 +105,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <option value="Alicante">Alicante</option>
                 <option value="Madrid">Madrid</option>
             </select>
-            <button type="button" class="bg-red-500 hover:bg-red-600 text-white rounded text-sm transition min-w-0 w-full md:w-auto py-2 md:px-3 md:py-2" onclick="this.parentElement.remove()">✕</button>
+            <button type="button" class="btnEliminarFila text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition min-w-0 w-full md:w-auto flex items-center justify-center py-2 md:px-3 md:py-2" title="Eliminar">${iconoPapelera}</button>
         `;
+        div.querySelector('.btnEliminarFila').addEventListener('click', () => {
+            div.remove();
+            actualizarCalculos();
+        });
         adelantosContainer.appendChild(div);
     }
 
-    if (btnAgregarGasto) btnAgregarGasto.addEventListener('click', agregarGastoFila);
-    if (btnAgregarAdelanto) btnAgregarAdelanto.addEventListener('click', agregarAdelantoFila);
+    if (btnAgregarGasto) btnAgregarGasto.addEventListener('click', () => { agregarGastoFila(); actualizarCalculos(); });
+    if (btnAgregarAdelanto) btnAgregarAdelanto.addEventListener('click', () => { agregarAdelantoFila(); actualizarCalculos(); });
 
     if (gastosContainer && gastosContainer.children.length === 0) agregarGastoFila();
     if (adelantosContainer && adelantosContainer.children.length === 0) agregarAdelantoFila();
+
+    actualizarCalculos();
 
     if (cierreForm) {
         cierreForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const puntoVenta = document.getElementById('puntoVenta').value;
-            const totalEfectivo = parseFloat(document.getElementById('totalEfectivo').value) || 0;
-            const totalTarjeta = parseFloat(document.getElementById('totalTarjeta').value) || 0;
+            const totalEfectivo = parseFloat(totalEfectivoInput.value) || 0;
+            const totalTarjeta = parseFloat(totalTarjetaInput.value) || 0;
             const observaciones = document.getElementById('observaciones').value;
 
             const gastos = [];
