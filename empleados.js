@@ -678,6 +678,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // --- Importar fotos de DNI en lote (ZIP) ---
+    const inputZipFotos = document.getElementById('inputZipFotos');
+    const btnImportarZipFotos = document.getElementById('btnImportarZipFotos');
+    const resultadoImportacionFotos = document.getElementById('resultadoImportacionFotos');
+
+    btnImportarZipFotos.addEventListener('click', () => inputZipFotos.click());
+
+    inputZipFotos.addEventListener('change', async () => {
+        const archivo = inputZipFotos.files[0];
+        if (!archivo) return;
+
+        btnImportarZipFotos.disabled = true;
+        btnImportarZipFotos.textContent = 'Subiendo...';
+        resultadoImportacionFotos.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('archivo', archivo);
+
+        try {
+            const res = await fetch('/api/personal/importar-fotos-zip', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar el ZIP');
+
+            let texto = `Importación completada: ${resultado.asignados} foto(s) asignada(s) de ${resultado.total} archivo(s) en el ZIP.`;
+            if (resultado.ignorados > 0) texto += ` ${resultado.ignorados} archivo(s) ignorado(s) (no eran jpg/png/pdf).`;
+            if (resultado.noEncontrados && resultado.noEncontrados.length > 0) {
+                texto += ` No se pudo cruzar: ${resultado.noEncontrados.join(', ')}.`;
+            }
+
+            resultadoImportacionFotos.textContent = texto;
+            resultadoImportacionFotos.className = resultado.noEncontrados && resultado.noEncontrados.length > 0
+                ? 'text-sm mb-6 text-amber-700 bg-amber-50 border border-amber-200 rounded p-3'
+                : 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacionFotos.classList.remove('hidden');
+
+            cargarEmpleados();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacionFotos.textContent = err.message || 'No se pudo importar el ZIP.';
+            resultadoImportacionFotos.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacionFotos.classList.remove('hidden');
+        } finally {
+            btnImportarZipFotos.disabled = false;
+            btnImportarZipFotos.textContent = '🗂️ Subir ZIP';
+            inputZipFotos.value = '';
+        }
+    });
+
     await cargarPuntosVentaSelect();
     await cargarEmpleados();
 });

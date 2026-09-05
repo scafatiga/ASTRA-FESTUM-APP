@@ -10,6 +10,7 @@ import multer from 'multer';
 import { Resend } from 'resend';
 import * as XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
+import AdmZip from 'adm-zip';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
@@ -1075,6 +1076,87 @@ app.post('/api/personal/importar-excel', requirePermiso('empleados'), upload.sin
   } catch (err) {
     console.error('Error POST /api/personal/importar-excel:', err.message);
     res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
+// --- Importar fotos de DNI en lote desde un ZIP ---
+// Cada archivo dentro del ZIP debe llevar en el nombre el DNI y/o el nombre del empleado.
+app.post('/api/personal/importar-fotos-zip', requirePermiso('empleados'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo ZIP' });
+  }
+
+  try {
+    const zip = new AdmZip(req.file.buffer);
+    const entradas = zip.getEntries().filter(e => !e.isDirectory);
+
+    const { rows: empleadosDb } = await pool.query('SELECT id, nombre, dni FROM empleados');
+
+    function extraerDni(nombreArchivo) {
+      const m = nombreArchivo.match(/\b(\d{8}[A-Za-z]|[XYZxyz]\d{7}[A-Za-z])\b/);
+      return m ? m[1].toUpperCase() : null;
+    }
+
+    function buscarEmpleado(nombreArchivo, dniExtraido) {
+      if (dniExtraido) {
+        const porDni = empleadosDb.find(e => (e.dni || '').trim().toUpperCase() === dniExtraido);
+        if (porDni) return porDni;
+      }
+      // Respaldo: busca por nombre dentro del nombre del archivo (sin extensión ni DNI)
+      const base = nombreArchivo.replace(/\.[^.]+$/, '');
+      const limpio = base
+        .replace(dniExtraido || '', '')
+        .replace(/[_\-]+/g, ' ')
+        .trim()
+        .toLowerCase();
+      if (!limpio) return null;
+
+      const porNombre = empleadosDb.find(e => {
+        const nombreEmp = (e.nombre || '').trim().toLowerCase();
+        return nombreEmp && (limpio.includes(nombreEmp) || nombreEmp.includes(limpio));
+      });
+      return porNombre || null;
+    }
+
+    function mimePorExtension(nombreArchivo) {
+      const ext = nombreArchivo.split('.').pop().toLowerCase();
+      if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+      if (ext === 'png') return 'image/png';
+      if (ext === 'pdf') return 'application/pdf';
+      return null;
+    }
+
+    let asignados = 0;
+    let ignorados = 0;
+    const noEncontrados = [];
+
+    for (const entrada of entradas) {
+      const nombreArchivo = entrada.entryName.split('/').pop();
+      const mime = mimePorExtension(nombreArchivo);
+      if (!mime) {
+        ignorados++;
+        continue;
+      }
+
+      const dniExtraido = extraerDni(nombreArchivo);
+      const empleado = buscarEmpleado(nombreArchivo, dniExtraido);
+
+      if (!empleado) {
+        noEncontrados.push(nombreArchivo);
+        continue;
+      }
+
+      await pool.query(
+        'UPDATE empleados SET foto_dni_data=$1, foto_dni_mime=$2, foto_dni_nombre_original=$3 WHERE id=$4',
+        [entrada.getData(), mime, nombreArchivo, empleado.id]
+      );
+      asignados++;
+    }
+
+    res.json({ ok: true, total: entradas.length, asignados, ignorados, noEncontrados });
+  } catch (err) {
+    console.error('Error POST /api/personal/importar-fotos-zip:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo ZIP. Asegúrate de que es un .zip válido.' });
   }
 });
 

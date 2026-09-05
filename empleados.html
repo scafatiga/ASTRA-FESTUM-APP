@@ -28,6 +28,20 @@
         </div>
         <p id="resultadoImportacion" class="text-sm mb-6 hidden"></p>
 
+        <!-- Importar fotos de DNI en lote (ZIP) -->
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex-1 text-sm text-gray-700">
+                <span class="font-semibold">Importar Fotos de DNI (ZIP)</span> — sube un .zip con las fotos/PDF de DNI. Cada archivo debe llevar en el nombre el DNI y/o el nombre del empleado (ej: "12345678A_Juan Perez.jpg") para poder cruzarlo con la ficha correcta.
+            </div>
+            <div>
+                <input type="file" id="inputZipFotos" accept=".zip" class="hidden">
+                <button type="button" id="btnImportarZipFotos" class="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded transition whitespace-nowrap">
+                    🗂️ Subir ZIP
+                </button>
+            </div>
+        </div>
+        <p id="resultadoImportacionFotos" class="text-sm mb-6 hidden"></p>
+
         <!-- Formulario de alta -->
         <form id="formEmpleado" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 border-b pb-6" novalidate autocomplete="off">
 
