@@ -67,7 +67,7 @@ const PAGE_PERMISOS = {
   '/albaranes.html': 'albaranes'
 };
 
-const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico']);
+const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico', '/resetear-password.html', '/resetear-password.js']);
 
 function requireAuth(req, res, next) {
   if (!req.session || !req.session.usuario) {
@@ -174,6 +174,113 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
+// Cualquier usuario logueado puede cambiar su propia contraseña (necesita la actual)
+app.post('/api/cambiar-password', requireAuth, async (req, res) => {
+  const { password_actual, password_nueva } = req.body;
+
+  if (!password_actual || !password_nueva) {
+    return res.status(400).json({ error: 'Falta la contraseña actual o la nueva' });
+  }
+  if (password_nueva.length < 8) {
+    return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 8 caracteres' });
+  }
+
+  try {
+    const { rows } = await pool.query('SELECT password_hash FROM usuarios WHERE id = $1', [req.session.usuario.id]);
+    if (!rows[0] || !rows[0].password_hash) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const coincide = await bcrypt.compare(password_actual, rows[0].password_hash);
+    if (!coincide) {
+      return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+    }
+
+    const hash = await bcrypt.hash(password_nueva, 10);
+    await pool.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, req.session.usuario.id]);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error POST /api/cambiar-password:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paso 1: el usuario pide el email de recuperación (sin necesitar sesión iniciada)
+app.post('/api/olvide-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Falta el email' });
+  }
+
+  // Siempre respondemos igual, exista o no el email, para no revelar qué cuentas existen
+  const mensajeGenerico = { ok: true, mensaje: 'Si ese email existe en el sistema, te hemos enviado un correo con las instrucciones.' };
+
+  try {
+    const { rows } = await pool.query('SELECT id, nombre, email FROM usuarios WHERE email = $1 AND activo = TRUE', [email]);
+    if (!rows[0]) {
+      return res.json(mensajeGenerico);
+    }
+    const usuario = rows[0];
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiraEn = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await pool.query(
+      'INSERT INTO password_reset_tokens (usuario_id, token, expira_en) VALUES ($1, $2, $3)',
+      [usuario.id, token, expiraEn.toISOString()]
+    );
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const urlReset = `${baseUrl}/resetear-password.html?token=${token}`;
+
+    try {
+      await enviarEmailResetPassword(usuario.email, usuario.nombre, urlReset);
+    } catch (errEmail) {
+      console.error('Error enviando email de recuperación:', errEmail.message);
+      // No revelamos el fallo de envío al usuario para no dar pistas; queda en logs del servidor.
+    }
+
+    res.json(mensajeGenerico);
+  } catch (err) {
+    console.error('Error POST /api/olvide-password:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paso 2: el usuario llega desde el enlace del email y pone la contraseña nueva
+app.post('/api/resetear-password', async (req, res) => {
+  const { token, password_nueva } = req.body;
+
+  if (!token || !password_nueva) {
+    return res.status(400).json({ error: 'Falta el token o la contraseña nueva' });
+  }
+  if (password_nueva.length < 8) {
+    return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 8 caracteres' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, usuario_id, expira_en, usado FROM password_reset_tokens WHERE token = $1',
+      [token]
+    );
+    const registro = rows[0];
+
+    if (!registro || registro.usado || new Date(registro.expira_en) < new Date()) {
+      return res.status(400).json({ error: 'Este enlace ya no es válido. Pide uno nuevo desde "¿Olvidaste tu contraseña?".' });
+    }
+
+    const hash = await bcrypt.hash(password_nueva, 10);
+    await pool.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, registro.usuario_id]);
+    await pool.query('UPDATE password_reset_tokens SET usado = TRUE WHERE id = $1', [registro.id]);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error POST /api/resetear-password:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/me', (req, res) => {
   if (!req.session || !req.session.usuario) {
     return res.status(401).json({ error: 'No autenticado' });
@@ -247,6 +354,34 @@ Gabriel Scafati
   }
 
   const { error } = await resend.emails.send(opciones);
+  if (error) {
+    throw new Error(error.message || JSON.stringify(error));
+  }
+}
+
+async function enviarEmailResetPassword(destinatario, nombre, urlReset) {
+  const resend = getResendClient();
+  const remitente = process.env.RESEND_FROM_EMAIL || 'Astra Festum <onboarding@resend.dev>';
+
+  const cuerpo = `Hola ${nombre || ''},
+
+Recibimos una solicitud para restablecer tu contraseña de Astra Festum.
+
+Pulsa este enlace para crear una contraseña nueva (caduca en 1 hora):
+${urlReset}
+
+Si no fuiste tú quien lo pidió, puedes ignorar este correo — tu contraseña actual seguirá funcionando.
+
+Un saludo,
+Astra Festum
+`;
+
+  const { error } = await resend.emails.send({
+    from: remitente,
+    to: destinatario,
+    subject: 'Restablecer tu contraseña - Astra Festum',
+    text: cuerpo
+  });
   if (error) {
     throw new Error(error.message || JSON.stringify(error));
   }
