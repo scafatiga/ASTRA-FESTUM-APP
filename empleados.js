@@ -198,6 +198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             puntosVentaCache = await res.json();
 
             const opciones = puntosVentaCache
+                .filter(pv => pv.activo)
                 .map(pv => `<option value="${pv.id}">${pv.nombre}</option>`)
                 .join('');
             selectPuntoVenta.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
@@ -325,7 +326,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('editFotoDni').value = '';
 
             const selectEditPV = document.getElementById('editPuntoVenta');
-            const opciones = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            const opciones = puntosVentaCache
+                .filter(pv => pv.activo || pv.id === e.punto_venta_id)
+                .map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
             selectEditPV.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
             selectEditPV.value = e.punto_venta_id || '';
 

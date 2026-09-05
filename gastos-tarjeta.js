@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             puntosVentaCache = await resPV.json();
             proveedoresCache = await resProv.json();
 
-            const opcionesPV = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            const opcionesPV = puntosVentaCache.filter(pv => pv.activo).map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
             selectPuntoVenta.innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
             document.getElementById('editPuntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
 
@@ -159,6 +159,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('editFecha').value = g.fecha ? g.fecha.substring(0, 10) : '';
             document.getElementById('editProveedor').value = g.proveedor_id || '';
             document.getElementById('editImporte').value = g.importe || '';
+            const opcionesEditPV = puntosVentaCache
+                .filter(pv => pv.activo || pv.id === g.punto_venta_id)
+                .map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            document.getElementById('editPuntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opcionesEditPV}`;
             document.getElementById('editPuntoVenta').value = g.punto_venta_id || '';
             document.getElementById('editFactura').value = '';
 

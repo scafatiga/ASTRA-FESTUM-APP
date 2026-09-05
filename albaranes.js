@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!res.ok) throw new Error('Error al cargar puntos de venta');
             puntosVentaCache = await res.json();
 
-            const opciones = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            const opciones = puntosVentaCache.filter(pv => pv.activo).map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
             selectOrigen.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
             selectDestino.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
         } catch (err) {
@@ -319,7 +319,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('editId').value = a.id;
             document.getElementById('editFecha').value = a.fecha ? a.fecha.substring(0, 10) : '';
 
-            const opcionesPV = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            const opcionesPV = puntosVentaCache
+                .filter(pv => pv.activo || pv.id === a.punto_venta_origen_id || pv.id === a.punto_venta_destino_id)
+                .map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
             document.getElementById('editPuntoVentaOrigen').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
             document.getElementById('editPuntoVentaDestino').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
             document.getElementById('editPuntoVentaOrigen').value = a.punto_venta_origen_id || '';

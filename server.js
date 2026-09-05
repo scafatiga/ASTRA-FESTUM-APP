@@ -456,7 +456,10 @@ Astra Festum
 
 app.get('/api/puntos-venta', requireAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM puntos_venta WHERE activo = TRUE ORDER BY nombre ASC');
+    // Devuelve TODOS (activos e inactivos): las pantallas necesitan traducir
+    // IDs ya guardados a su nombre aunque el punto de venta esté descontinuado.
+    // El propio frontend filtra por "activo" al construir los desplegables de alta.
+    const { rows } = await pool.query('SELECT * FROM puntos_venta ORDER BY activo DESC, nombre ASC');
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
