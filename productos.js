@@ -157,6 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ['Producto', p.nombre],
                 ['Tipo_Stand', p.tipo_stand],
                 ['Precio Unitario', formatearImporte(p.precio_unitario)],
+                ['Cantidad Estándar', p.cantidad_estandar !== null && p.cantidad_estandar !== undefined ? Number(p.cantidad_estandar) : 'No definida'],
                 ['Estado', p.activo ? 'Activo' : 'Inactivo'],
                 ['Registrado por', p.registrado_por_nombre
                     ? `${p.registrado_por_nombre} — ${formatearFechaHora(p.created_at)}`
@@ -203,6 +204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('editId').value = p.id;
         document.getElementById('editNombre').value = p.nombre || '';
         document.getElementById('editPrecioUnitario').value = p.precio_unitario || '';
+        document.getElementById('editCantidadEstandar').value = (p.cantidad_estandar !== null && p.cantidad_estandar !== undefined) ? p.cantidad_estandar : '';
         pintarBotones('editTipoStandBotones', 'editTipoStand', p.tipo_stand);
 
         document.getElementById('modalEditar').classList.remove('hidden');
@@ -225,7 +227,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const datos = {
             nombre: document.getElementById('editNombre').value.trim(),
             tipo_stand: tipoStand,
-            precio_unitario: document.getElementById('editPrecioUnitario').value
+            precio_unitario: document.getElementById('editPrecioUnitario').value,
+            cantidad_estandar: document.getElementById('editCantidadEstandar').value
         };
 
         try {
@@ -274,6 +277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 nombre: document.getElementById('nombre').value.trim(),
                 tipo_stand: tipoStand,
                 precio_unitario: document.getElementById('precioUnitario').value,
+                cantidad_estandar: document.getElementById('cantidadEstandar').value,
                 stock: document.getElementById('stockInicial').value || ''
             };
 

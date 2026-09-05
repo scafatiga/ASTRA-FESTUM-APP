@@ -1623,7 +1623,7 @@ app.get('/api/productos-dropdown', requirePermiso('albaranes'), async (req, res)
   const { tipo_stand } = req.query;
   try {
     const params = [];
-    let query = 'SELECT id, nombre, precio_unitario, tipo_stand FROM insumos_productos WHERE activo = TRUE';
+    let query = 'SELECT id, nombre, precio_unitario, tipo_stand, cantidad_estandar FROM insumos_productos WHERE activo = TRUE';
     if (tipo_stand) {
       params.push(tipo_stand);
       query += ` AND tipo_stand = $${params.length}`;
@@ -1719,6 +1719,7 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
         const tipoStandDeFila = normalizarTipoStand(obtenerValorColumna(fila, ['TIPO_STAND', 'TIPO STAND', 'STAND']));
         const tipoStand = tipoStandDeFila || tipoStandDeHoja;
         const stockValor = obtenerValorColumna(fila, ['STOCK', 'STOCK INICIAL', 'STOCK_INICIAL', 'STOCK ACTUALIZADO', 'STOCK_ACTUALIZADO']);
+        const cantidadEstandarValor = obtenerValorColumna(fila, ['CANTIDAD_ALBARAN', 'CANTIDAD ALBARAN', 'CANTIDAD ESTANDAR', 'CANTIDAD_ESTANDAR']);
 
         if (!nombreProducto || !tipoStand || precioUnitario === undefined || precioUnitario === '') continue;
 
@@ -1731,11 +1732,18 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
           if (!isNaN(n)) stockNumero = n;
         }
 
+        let cantidadEstandarNumero = null;
+        if (cantidadEstandarValor !== undefined && cantidadEstandarValor !== '') {
+          const n = parseFloat(String(cantidadEstandarValor).replace(',', '.'));
+          if (!isNaN(n)) cantidadEstandarNumero = n;
+        }
+
         filasAImportar.push({
           nombre: String(nombreProducto).trim(),
           tipo_stand: tipoStand,
           precio_unitario: precioNumero,
-          stock: stockNumero
+          stock: stockNumero,
+          cantidad_estandar: cantidadEstandarNumero
         });
       }
     }
@@ -1752,12 +1760,14 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
 
     for (const p of filasAImportar) {
       const resultado = await pool.query(
-        `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, registrado_por)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, cantidad_estandar, registrado_por)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (nombre, tipo_stand)
-         DO UPDATE SET precio_unitario = EXCLUDED.precio_unitario
+         DO UPDATE SET
+           precio_unitario = EXCLUDED.precio_unitario,
+           cantidad_estandar = COALESCE(EXCLUDED.cantidad_estandar, insumos_productos.cantidad_estandar)
          RETURNING id, (xmax = 0) AS es_nuevo`,
-        [p.nombre, p.tipo_stand, p.precio_unitario, req.session.usuario.id]
+        [p.nombre, p.tipo_stand, p.precio_unitario, p.cantidad_estandar, req.session.usuario.id]
       );
       if (resultado.rows[0].es_nuevo) creados++;
       else actualizados++;
@@ -1789,7 +1799,7 @@ app.post('/api/productos/importar-excel', requirePermiso('insumos'), upload.sing
 });
 
 app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
-  const { nombre, tipo_stand, precio_unitario, stock } = req.body;
+  const { nombre, tipo_stand, precio_unitario, stock, cantidad_estandar } = req.body;
 
   if (!nombre || !tipo_stand || !precio_unitario) {
     return res.status(400).json({ error: 'Nombre, Tipo_Stand y Precio Unitario son obligatorios' });
@@ -1798,12 +1808,14 @@ app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
     return res.status(400).json({ error: 'Tipo_Stand no válido' });
   }
 
+  const cantidadEstandarValor = (cantidad_estandar !== undefined && cantidad_estandar !== '') ? cantidad_estandar : null;
+
   try {
     const { rows } = await pool.query(
-      `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, registrado_por)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO insumos_productos (nombre, tipo_stand, precio_unitario, cantidad_estandar, registrado_por)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [nombre, tipo_stand, precio_unitario, req.session.usuario.id]
+      [nombre, tipo_stand, precio_unitario, cantidadEstandarValor, req.session.usuario.id]
     );
     const producto = rows[0];
 
@@ -1829,7 +1841,7 @@ app.post('/api/productos', requirePermiso('insumos'), async (req, res) => {
 
 app.put('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
   const { id } = req.params;
-  const { nombre, tipo_stand, precio_unitario } = req.body;
+  const { nombre, tipo_stand, precio_unitario, cantidad_estandar } = req.body;
 
   if (!nombre || !tipo_stand || !precio_unitario) {
     return res.status(400).json({ error: 'Nombre, Tipo_Stand y Precio Unitario son obligatorios' });
@@ -1838,10 +1850,12 @@ app.put('/api/productos/:id', requirePermiso('insumos'), async (req, res) => {
     return res.status(400).json({ error: 'Tipo_Stand no válido' });
   }
 
+  const cantidadEstandarValor = (cantidad_estandar !== undefined && cantidad_estandar !== '') ? cantidad_estandar : null;
+
   try {
     const { rows } = await pool.query(
-      'UPDATE insumos_productos SET nombre=$1, tipo_stand=$2, precio_unitario=$3 WHERE id=$4 RETURNING *',
-      [nombre, tipo_stand, precio_unitario, id]
+      'UPDATE insumos_productos SET nombre=$1, tipo_stand=$2, precio_unitario=$3, cantidad_estandar=$4 WHERE id=$5 RETURNING *',
+      [nombre, tipo_stand, precio_unitario, cantidadEstandarValor, id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Producto no encontrado' });
     res.json(rows[0]);

@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Rejilla de productos: reutilizable para Alta y para Editar ---
     // tablaId: <tbody> donde pintar las filas. cantidadesIniciales: { producto_id: cantidad } (opcional, para precargar en Editar)
-    async function cargarRejillaProductosEn(tablaId, bloqueEl, totalEl, tipoStand, cantidadesIniciales) {
+    async function cargarRejillaProductosEn(tablaId, bloqueEl, totalEl, tipoStand, cantidadesIniciales, usarCantidadEstandar) {
         const tablaEl = document.getElementById(tablaId);
         if (!tipoStand) {
             bloqueEl.classList.add('hidden');
@@ -85,7 +85,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 tablaEl.innerHTML = `<tr><td colspan="4" class="p-3 text-center text-gray-500">No hay productos activos para ${tipoStand}.</td></tr>`;
             } else {
                 tablaEl.innerHTML = productos.map(p => {
-                    const cantidadPrevia = cantidadesIniciales && cantidadesIniciales[p.id] ? cantidadesIniciales[p.id] : '';
+                    let cantidadPrevia = '';
+                    if (cantidadesIniciales && cantidadesIniciales[p.id]) {
+                        cantidadPrevia = cantidadesIniciales[p.id];
+                    } else if (usarCantidadEstandar && p.cantidad_estandar !== null && p.cantidad_estandar !== undefined) {
+                        cantidadPrevia = p.cantidad_estandar;
+                    }
                     return `
                         <tr class="border-b producto-fila" data-precio="${p.precio_unitario}">
                             <td class="p-2">${p.nombre}</td>
@@ -152,10 +157,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     conectarBuscador('buscadorProductosGrid', 'tablaProductosGrid');
     conectarBuscador('editBuscadorProductosGrid', 'editTablaProductosGrid');
 
-    pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '');
+    function esInicialSeleccionado() {
+        return document.getElementById('tipoAlbaran').value === 'INICIAL';
+    }
+
+    pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '', () => {
+        const tipoStandActual = document.getElementById('tipoStand').value;
+        if (tipoStandActual) {
+            document.getElementById('buscadorProductosGrid').value = '';
+            cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', tipoStandActual, null, esInicialSeleccionado());
+        }
+    });
     pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => {
         document.getElementById('buscadorProductosGrid').value = '';
-        cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor);
+        cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor, null, esInicialSeleccionado());
     });
 
     // --- Colapsar / expandir la lista ---
@@ -450,10 +465,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!res.ok) throw new Error(resultado.error || 'Error al crear el albarán');
 
                 form.reset();
-                pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '');
+                pintarBotones('tipoAlbaranBotones', 'tipoAlbaran', TIPOS_ALBARAN, '', () => {
+                    const tipoStandActual = document.getElementById('tipoStand').value;
+                    if (tipoStandActual) {
+                        document.getElementById('buscadorProductosGrid').value = '';
+                        cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', tipoStandActual, null, esInicialSeleccionado());
+                    }
+                });
                 pintarBotones('tipoStandBotones', 'tipoStand', TIPOS_STAND, '', (valor) => {
                     document.getElementById('buscadorProductosGrid').value = '';
-                    cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor);
+                    cargarRejillaProductosEn('tablaProductosGrid', bloqueProductos, 'totalAlbaran', valor, null, esInicialSeleccionado());
                 });
                 bloqueProductos.classList.add('hidden');
                 barraTotalAlta.classList.add('hidden');
