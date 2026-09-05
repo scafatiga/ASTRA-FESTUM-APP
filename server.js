@@ -4343,9 +4343,9 @@ app.post('/api/tarifas-sueldos/importar-excel', requirePermiso('tarifas_sueldos'
 
       await pool.query(
         `INSERT INTO tarifas_sueldos
-          (empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [empleadoId, importeDia, horasPorDia, importeHora, extraMas10Horas, horaxmontaje, vigenteDesde, vigenteHasta]
+          (empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta, empleado_nombre_excel)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [empleadoId, importeDia, horasPorDia, importeHora, extraMas10Horas, horaxmontaje, vigenteDesde, vigenteHasta, String(nombreEmpleado).trim()]
       );
       creados++;
     }

@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function filtrarTarifas(texto) {
         const q = (texto || '').trim().toLowerCase();
         if (!q) return tarifasCache;
-        return tarifasCache.filter(t => (t.empleado_nombre || '').toLowerCase().includes(q));
+        return tarifasCache.filter(t => (t.empleado_nombre || t.empleado_nombre_excel || '').toLowerCase().includes(q));
     }
 
     // --- Cargar lista ---
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         tabla.innerHTML = datos.map(t => `
                 <tr class="hover:bg-gray-50 border-b">
-                    <td class="p-3 text-gray-800 font-medium">${t.empleado_nombre || '-'}</td>
+                    <td class="p-3 text-gray-800 font-medium">${t.empleado_nombre || (t.empleado_nombre_excel ? t.empleado_nombre_excel + ' \u26a0\ufe0f (sin cruzar)' : '-')}</td>
                     <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(t.importe_dia)}</td>
                     <td class="p-3 text-gray-600 whitespace-nowrap">${formatearImporte(t.importe_hora)}</td>
                     <td class="p-3 text-gray-600">${formatearFecha(t.vigente_desde)}</td>
@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const t = await res.json();
 
             const filas = [
-                ['Empleado', t.empleado_nombre || '-'],
+                ['Empleado', t.empleado_nombre || (t.empleado_nombre_excel ? t.empleado_nombre_excel + ' ⚠️ (sin cruzar con Empleados)' : '-')],
                 ['Importe Día', formatearImporte(t.importe_dia)],
                 ['Horas por Día', t.horas_por_dia],
                 ['Importe Hora', formatearImporte(t.importe_hora)],
