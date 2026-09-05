@@ -84,6 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <option value="Alicante">Alicante</option>
                 <option value="Madrid">Madrid</option>
             </select>
+            <input type="file" accept="image/*,.pdf" class="gasto-foto col-span-3 md:w-40 min-w-0 border p-1.5 rounded w-full text-xs" title="Foto del ticket (opcional)">
             <button type="button" class="btnEliminarFila text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition min-w-0 w-full md:w-auto flex items-center justify-center py-2 md:px-3 md:py-2" title="Eliminar">${iconoPapelera}</button>
         `;
         div.querySelector('.btnEliminarFila').addEventListener('click', () => {
@@ -132,12 +133,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const observaciones = document.getElementById('observaciones').value;
 
             const gastos = [];
+            const fotosGastos = [];
             document.querySelectorAll('#gastosContainer > div').forEach(row => {
                 const descripcion = row.querySelector('.gasto-desc').value;
                 const importe = parseFloat(row.querySelector('.gasto-importe').value) || 0;
                 const pv = row.querySelector('.gasto-pv').value;
                 if (descripcion && importe > 0) {
                     gastos.push({ descripcion, importe, punto_venta: pv });
+                    const inputFoto = row.querySelector('.gasto-foto');
+                    fotosGastos.push(inputFoto && inputFoto.files[0] ? inputFoto.files[0] : null);
                 }
             });
 
@@ -160,11 +164,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 observaciones
             };
 
+            const formData = new FormData();
+            formData.append('datos', JSON.stringify(datosCierre));
+            fotosGastos.forEach((archivo, indice) => {
+                if (archivo) formData.append(`fotoGasto_${indice}`, archivo);
+            });
+
             try {
                 const response = await fetch('/api/cierres', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datosCierre)
+                    body: formData
                 });
 
                 if (!response.ok) throw new Error('Error al registrar el cierre');

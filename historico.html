@@ -20,16 +20,23 @@
         </div>
 
         <!-- Importar histórico desde Excel (solo administrador) -->
-        <div id="bloqueImportarCierres" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div class="flex-1 text-sm text-gray-700">
-                <span class="font-semibold">Importar Histórico desde Excel</span> — sube el Excel con el formato de AppSheet (columnas FECHA, HORA, PUNTO DE VENTA, VENTA TARJETA, VENTA EFECTIVO, CENTRO DE COSTO 1-5, IMPORTE GASTO 1-5, PAGO 1-4: EMPLEADO/IMPORTE, etc.). No lo subas dos veces: no detecta duplicados.
+        <div id="bloqueImportarCierres" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div class="text-sm text-gray-700 mb-3">
+                <span class="font-semibold">Importar Histórico desde Excel</span> — sube el Excel con el formato de AppSheet (columnas FECHA, HORA, PUNTO DE VENTA, VENTA TARJETA, VENTA EFECTIVO, CENTRO DE COSTO 1-5, IMPORTE GASTO 1-5, FOTO TICKET 1-5, PAGO 1-4: EMPLEADO/IMPORTE, SUBIR ARCHIVO, etc.). El ZIP de fotos de tickets/comprobantes es opcional pero recomendado. No lo subas dos veces: no detecta duplicados.
             </div>
-            <div>
-                <input type="file" id="inputExcelCierres" accept=".xlsx,.xls" class="hidden">
-                <button type="button" id="btnImportarExcelCierres" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition whitespace-nowrap">
-                    📄 Subir Excel
-                </button>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Excel:</label>
+                    <input type="file" id="inputExcelCierres" accept=".xlsx,.xls" class="w-full border p-2 rounded text-sm bg-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">ZIP de tickets/comprobantes (opcional):</label>
+                    <input type="file" id="inputZipCierres" accept=".zip" class="w-full border p-2 rounded text-sm bg-white">
+                </div>
             </div>
+            <button type="button" id="btnImportarExcelCierres" class="w-full sm:w-auto mt-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition">
+                📄 Importar
+            </button>
         </div>
         <p id="resultadoImportacionCierres" class="text-sm mb-6 hidden"></p>
 

@@ -723,116 +723,183 @@ function combinarFechaHoraExcel(fechaValor, horaValor) {
   return new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), horas, minutos, segundos);
 }
 
-app.post('/api/cierres/importar-excel', requirePermiso('cierre'), upload.single('archivo'), async (req, res) => {
-  if (!req.session.usuario.es_admin) {
-    return res.status(403).json({ error: 'Solo un administrador puede importar el histórico de cierres' });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: 'Falta el archivo Excel' });
-  }
-
-  try {
-    const libro = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
-    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
-    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
-
-    if (filas.length === 0) {
-      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+app.post(
+  '/api/cierres/importar-excel',
+  requirePermiso('cierre'),
+  upload.fields([{ name: 'excel', maxCount: 1 }, { name: 'zip', maxCount: 1 }]),
+  async (req, res) => {
+    if (!req.session.usuario.es_admin) {
+      return res.status(403).json({ error: 'Solo un administrador puede importar el histórico de cierres' });
+    }
+    if (!req.files || !req.files.excel || !req.files.excel[0]) {
+      return res.status(400).json({ error: 'Falta el archivo Excel' });
     }
 
-    const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
-    function buscarUsuarioId(nombreOEmail) {
-      if (!nombreOEmail) return null;
-      const texto = String(nombreOEmail).trim().toLowerCase();
-      const encontrado = usuariosDb.find(u =>
-        (u.nombre || '').trim().toLowerCase() === texto ||
-        (u.email || '').trim().toLowerCase() === texto
-      );
-      return encontrado ? encontrado.id : null;
-    }
+    try {
+      const libro = XLSX.read(req.files.excel[0].buffer, { type: 'buffer', cellDates: true });
+      const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
 
-    let creados = 0;
-    let omitidos = 0;
-    const erroresFilas = [];
-
-    for (let i = 0; i < filas.length; i++) {
-      const fila = normalizarFilaExcel(filas[i]);
-
-      const puntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
-      const fechaValor = obtenerValorPorClave(fila, 'FECHA');
-      const horaValor = obtenerValorPorClave(fila, 'HORA');
-
-      if (!puntoVenta || !fechaValor) {
-        omitidos++;
-        continue;
+      if (filas.length === 0) {
+        return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
       }
 
-      const fechaCompleta = combinarFechaHoraExcel(fechaValor, horaValor) || new Date();
+      let entradasZip = [];
+      if (req.files.zip && req.files.zip[0]) {
+        const zip = new AdmZip(req.files.zip[0].buffer);
+        entradasZip = zip.getEntries()
+          .filter(e => !e.isDirectory)
+          .map(e => ({ rutaNormalizada: normalizarRutaArchivo(e.entryName), entrada: e }));
+      }
 
-      const totalTarjeta = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA TARJETA'));
-      const totalEfectivo = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA EFECTIVO'));
+      function buscarArchivoZip(rutaExcel) {
+        if (!rutaExcel || entradasZip.length === 0) return null;
+        const rutaNorm = normalizarRutaArchivo(rutaExcel);
+        let encontrado = entradasZip.find(e => e.rutaNormalizada.endsWith(rutaNorm));
+        if (!encontrado) encontrado = entradasZip.find(e => rutaNorm.endsWith(e.rutaNormalizada));
+        if (!encontrado) {
+          const nombreArchivo = rutaNorm.split('/').pop();
+          encontrado = entradasZip.find(e => e.rutaNormalizada.split('/').pop() === nombreArchivo);
+        }
+        return encontrado ? encontrado.entrada : null;
+      }
 
-      const gastos = [];
-      for (let g = 1; g <= 5; g++) {
-        const descripcion = obtenerValorPorClave(fila, `CENTRO DE COSTO ${g}`);
-        const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `IMPORTE GASTO ${g}`));
-        if (descripcion && importe > 0) {
-          gastos.push({ descripcion: String(descripcion).trim(), importe, punto_venta: String(puntoVenta).trim() });
+      async function subirSiExiste(rutaExcel, carpeta) {
+        const archivo = buscarArchivoZip(rutaExcel);
+        if (!archivo) return { r2Key: null, mime: null };
+        const nombreArchivo = archivo.entryName.split('/').pop();
+        const mime = mimePorExtensionGenerico(nombreArchivo);
+        if (!mime) return { r2Key: null, mime: null };
+        try {
+          const buffer = archivo.getData();
+          const r2Key = await subirArchivoR2(carpeta, nombreArchivo, buffer, mime);
+          return { r2Key, mime };
+        } catch (errR2) {
+          console.error('Error subiendo archivo de Cierre a R2:', errR2.message);
+          return { r2Key: null, mime: null };
         }
       }
 
-      const adelantos = [];
-      for (let p = 1; p <= 4; p++) {
-        const empleado = obtenerValorPorClave(fila, `PAGO ${p}: EMPLEADO`);
-        const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `PAGO ${p}: IMPORTE`));
-        const pvPago = obtenerValorPorClave(fila, `PUNTO DE VENTA PAGO ${p}`) || puntoVenta;
-        if (empleado && importe > 0) {
-          adelantos.push({ empleado: String(empleado).trim(), importe, punto_venta: String(pvPago).trim() });
-        }
-      }
-
-      const obsGastos = obtenerValorPorClave(fila, 'OBSERVACIONES GASTOS');
-      const obsPagos = obtenerValorPorClave(fila, 'OBSERVACIONES PAGOS EMPLEADOS');
-      const observaciones = [obsGastos, obsPagos].filter(Boolean).map(String).join(' | ');
-
-      const usuarioId = buscarUsuarioId(obtenerValorPorClave(fila, 'USUARIO'));
-
-      try {
-        await pool.query(
-          `INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
-          [
-            fechaCompleta.toISOString(),
-            String(puntoVenta).trim(),
-            totalEfectivo,
-            totalTarjeta,
-            observaciones,
-            JSON.stringify(gastos),
-            JSON.stringify(adelantos),
-            usuarioId
-          ]
+      const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
+      function buscarUsuarioId(nombreOEmail) {
+        if (!nombreOEmail) return null;
+        const texto = String(nombreOEmail).trim().toLowerCase();
+        const encontrado = usuariosDb.find(u =>
+          (u.nombre || '').trim().toLowerCase() === texto ||
+          (u.email || '').trim().toLowerCase() === texto
         );
-        creados++;
-      } catch (errFila) {
-        erroresFilas.push({ fila: i + 2, error: errFila.message });
+        return encontrado ? encontrado.id : null;
       }
+
+      let creados = 0;
+      let omitidos = 0;
+      let conTicket = 0;
+      let conComprobanteGeneral = 0;
+      const erroresFilas = [];
+
+      for (let i = 0; i < filas.length; i++) {
+        const fila = normalizarFilaExcel(filas[i]);
+
+        const puntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
+        const fechaValor = obtenerValorPorClave(fila, 'FECHA');
+        const horaValor = obtenerValorPorClave(fila, 'HORA');
+
+        if (!puntoVenta || !fechaValor) {
+          omitidos++;
+          continue;
+        }
+
+        const fechaCompleta = combinarFechaHoraExcel(fechaValor, horaValor) || new Date();
+
+        const totalTarjeta = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA TARJETA'));
+        const totalEfectivo = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA EFECTIVO'));
+
+        const gastos = [];
+        for (let g = 1; g <= 5; g++) {
+          const descripcion = obtenerValorPorClave(fila, `CENTRO DE COSTO ${g}`);
+          const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `IMPORTE GASTO ${g}`));
+          if (descripcion && importe > 0) {
+            const rutaTicket = obtenerValorPorClave(fila, `FOTO TICKET ${g}`);
+            const { r2Key, mime } = await subirSiExiste(rutaTicket, 'cierres/ticket-gasto');
+            if (r2Key) conTicket++;
+            gastos.push({
+              descripcion: String(descripcion).trim(),
+              importe,
+              punto_venta: String(puntoVenta).trim(),
+              foto_r2_key: r2Key,
+              foto_mime: mime
+            });
+          }
+        }
+
+        const adelantos = [];
+        for (let p = 1; p <= 4; p++) {
+          const empleado = obtenerValorPorClave(fila, `PAGO ${p}: EMPLEADO`);
+          const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `PAGO ${p}: IMPORTE`));
+          const pvPago = obtenerValorPorClave(fila, `PUNTO DE VENTA PAGO ${p}`) || puntoVenta;
+          if (empleado && importe > 0) {
+            adelantos.push({ empleado: String(empleado).trim(), importe, punto_venta: String(pvPago).trim() });
+          }
+        }
+
+        const obsGastos = obtenerValorPorClave(fila, 'OBSERVACIONES GASTOS');
+        const obsPagos = obtenerValorPorClave(fila, 'OBSERVACIONES PAGOS EMPLEADOS');
+        const observaciones = [obsGastos, obsPagos].filter(Boolean).map(String).join(' | ');
+
+        const usuarioId = buscarUsuarioId(obtenerValorPorClave(fila, 'USUARIO'));
+
+        const rutaComprobanteGeneral = obtenerValorPorClave(fila, 'SUBIR ARCHIVO');
+        const { r2Key: comprobanteGeneralR2Key, mime: comprobanteGeneralMime } = await subirSiExiste(rutaComprobanteGeneral, 'cierres/comprobante-general');
+        if (comprobanteGeneralR2Key) conComprobanteGeneral++;
+
+        try {
+          await pool.query(
+            `INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por, comprobante_general_r2_key, comprobante_general_mime)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)`,
+            [
+              fechaCompleta.toISOString(),
+              String(puntoVenta).trim(),
+              totalEfectivo,
+              totalTarjeta,
+              observaciones,
+              JSON.stringify(gastos),
+              JSON.stringify(adelantos),
+              usuarioId,
+              comprobanteGeneralR2Key,
+              comprobanteGeneralMime
+            ]
+          );
+          creados++;
+        } catch (errFila) {
+          erroresFilas.push({ fila: i + 2, error: errFila.message });
+        }
+      }
+
+      res.json({
+        ok: true,
+        total: filas.length,
+        creados,
+        omitidos,
+        conTicket,
+        conComprobanteGeneral,
+        errores: erroresFilas.length,
+        detalleErrores: erroresFilas.slice(0, 10)
+      });
+    } catch (err) {
+      console.error('Error POST /api/cierres/importar-excel:', err.message);
+      res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que el Excel y el ZIP son válidos.' });
     }
-
-    res.json({
-      ok: true,
-      total: filas.length,
-      creados,
-      omitidos,
-      errores: erroresFilas.length,
-      detalleErrores: erroresFilas.slice(0, 10)
-    });
-  } catch (err) {
-    console.error('Error POST /api/cierres/importar-excel:', err.message);
-    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
   }
-});
+);
 
-app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
+app.post('/api/cierres', requirePermiso('cierre'), upload.any(), async (req, res) => {
+  let datos;
+  try {
+    datos = req.body.datos ? JSON.parse(req.body.datos) : req.body;
+  } catch (err) {
+    return res.status(400).json({ error: 'Datos del cierre mal formados' });
+  }
+
   const {
     fecha,
     punto_venta,
@@ -841,23 +908,53 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
     observaciones,
     gastos,
     adelantos
-  } = req.body;
+  } = datos;
 
   // Validación básica: sin punto_venta no tiene sentido guardar el cierre
   if (!punto_venta) {
     return res.status(400).json({ error: 'Falta punto_venta en la petición' });
   }
 
-  // gastos/adelantos siempre deben ser arrays (aunque vengan vacíos) antes de guardarlos como JSON
-  const gastosJson = JSON.stringify(Array.isArray(gastos) ? gastos : []);
-  const adelantosJson = JSON.stringify(Array.isArray(adelantos) ? adelantos : []);
+  const gastosArray = Array.isArray(gastos) ? gastos : [];
+  const adelantosArray = Array.isArray(adelantos) ? adelantos : [];
+  const archivos = req.files || [];
+
+  // Sube la foto de ticket de cada gasto (si el usuario adjuntó alguna)
+  for (let i = 0; i < gastosArray.length; i++) {
+    const archivo = archivos.find(f => f.fieldname === `fotoGasto_${i}`);
+    if (archivo) {
+      try {
+        const r2Key = await subirArchivoR2('cierres/ticket-gasto', archivo.originalname, archivo.buffer, archivo.mimetype);
+        gastosArray[i].foto_r2_key = r2Key;
+        gastosArray[i].foto_mime = archivo.mimetype;
+      } catch (errR2) {
+        console.error('Error subiendo foto de ticket a R2:', errR2.message);
+      }
+    }
+  }
+
+  // Comprobante general del cierre (si se adjuntó)
+  let comprobanteGeneralR2Key = null;
+  let comprobanteGeneralMime = null;
+  const archivoGeneral = archivos.find(f => f.fieldname === 'comprobanteGeneral');
+  if (archivoGeneral) {
+    try {
+      comprobanteGeneralR2Key = await subirArchivoR2('cierres/comprobante-general', archivoGeneral.originalname, archivoGeneral.buffer, archivoGeneral.mimetype);
+      comprobanteGeneralMime = archivoGeneral.mimetype;
+    } catch (errR2) {
+      console.error('Error subiendo comprobante general a R2:', errR2.message);
+    }
+  }
+
+  const gastosJson = JSON.stringify(gastosArray);
+  const adelantosJson = JSON.stringify(adelantosArray);
 
   try {
     const { rows } = await pool.query(
       `INSERT INTO cierres
-        (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por)
+        (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por, comprobante_general_r2_key, comprobante_general_mime)
        VALUES
-        (COALESCE($1, NOW()), $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
+        (COALESCE($1, NOW()), $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)
        RETURNING *`,
       [
         fecha || null,
@@ -867,12 +964,62 @@ app.post('/api/cierres', requirePermiso('cierre'), async (req, res) => {
         observaciones || '',
         gastosJson,
         adelantosJson,
-        req.session.usuario.id
+        req.session.usuario.id,
+        comprobanteGeneralR2Key,
+        comprobanteGeneralMime
       ]
     );
     res.json(rows[0]);
   } catch (err) {
     console.error('Error POST /api/cierres:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sirve la foto de ticket de un gasto concreto dentro de un cierre
+app.get('/api/cierres/:id/gasto-ticket/:indice', requirePermiso('cierre'), async (req, res) => {
+  const { id, indice } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT gastos FROM cierres WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Cierre no encontrado' });
+
+    const gastos = rows[0].gastos || [];
+    const gasto = gastos[Number(indice)];
+    if (!gasto || !gasto.foto_r2_key) {
+      return res.status(404).send('No hay foto de ticket para ese gasto');
+    }
+
+    const datosArchivo = await leerArchivoR2(gasto.foto_r2_key);
+    res.set('Content-Type', gasto.foto_mime || 'application/octet-stream');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="ticket-${id.slice(0, 8)}-${indice}"`);
+    }
+    res.send(datosArchivo);
+  } catch (err) {
+    console.error('Error GET /api/cierres/:id/gasto-ticket/:indice:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sirve el comprobante general de un cierre
+app.get('/api/cierres/:id/comprobante-general', requirePermiso('cierre'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      'SELECT comprobante_general_r2_key, comprobante_general_mime FROM cierres WHERE id = $1',
+      [id]
+    );
+    if (!rows[0] || !rows[0].comprobante_general_r2_key) {
+      return res.status(404).send('No hay comprobante general para este cierre');
+    }
+    const datosArchivo = await leerArchivoR2(rows[0].comprobante_general_r2_key);
+    res.set('Content-Type', rows[0].comprobante_general_mime || 'application/octet-stream');
+    if (req.query.download) {
+      res.set('Content-Disposition', `attachment; filename="comprobante-${id.slice(0, 8)}"`);
+    }
+    res.send(datosArchivo);
+  } catch (err) {
+    console.error('Error GET /api/cierres/:id/comprobante-general:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

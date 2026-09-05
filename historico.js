@@ -48,15 +48,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { fechaFormateada, puntoVenta, efectivo, tarjeta, totalBruto, gastos, adelantos, totalGastos, totalAdelantos, cashNeto };
     }
 
-    function construirDetallesHtml(gastos, adelantos) {
+    function construirDetallesHtml(gastos, adelantos, cierreId) {
         let detallesHtml = '<div class="space-y-1 text-xs">';
         if (Array.isArray(gastos) && gastos.length > 0) {
             detallesHtml += '<div class="font-semibold text-red-600">Gastos:</div>';
-            gastos.forEach(g => {
+            gastos.forEach((g, indice) => {
                 const desc = g.descripcion || g.concepto || g.desc || 'Gasto';
                 const imp = Number(g.importe || g.monto || g.valor || 0).toFixed(2);
                 const pvGasto = g.punto_venta || g.puntoVenta || '';
-                detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '(' + pvGasto + ')' : ''}</div>`;
+                const enlaceTicket = g.foto_r2_key
+                    ? ` <a href="/api/cierres/${cierreId}/gasto-ticket/${indice}" target="_blank" class="text-blue-600 hover:underline">Ver ticket</a>`
+                    : '';
+                detallesHtml += `<div>- ${desc}: ${imp}€ ${pvGasto ? '(' + pvGasto + ')' : ''}${enlaceTicket}</div>`;
             });
         }
         if (Array.isArray(adelantos) && adelantos.length > 0) {
@@ -115,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         tbody.innerHTML = cierres.map(c => {
             const { fechaFormateada, puntoVenta, efectivo, tarjeta, totalBruto, gastos, adelantos, totalGastos, totalAdelantos, cashNeto } = calcularTotales(c);
-            const detallesHtml = construirDetallesHtml(gastos, adelantos);
+            const detallesHtml = construirDetallesHtml(gastos, adelantos, c.id);
 
             const celdaAccion = esAdmin ? `
                 <td class="p-3">
@@ -183,13 +186,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ['Registrado por', c.registrado_por_nombre || '-']
             ];
 
+            if (c.comprobante_general_r2_key) {
+                filas.push(['Comprobante General', `<a href="/api/cierres/${c.id}/comprobante-general" target="_blank" class="text-blue-600 hover:underline">Ver</a>`]);
+            }
+
             let html = filas.map(([label, valor]) => `
                 <div class="flex justify-between border-b py-1.5 gap-4">
                     <span class="text-gray-500">${label}</span>
                     <span class="text-gray-800 font-medium text-right">${valor}</span>
                 </div>
             `).join('');
-            html += `<div class="pt-3">${construirDetallesHtml(gastos, adelantos)}</div>`;
+            html += `<div class="pt-3">${construirDetallesHtml(gastos, adelantos, c.id)}</div>`;
 
             document.getElementById('contenidoDetalle').innerHTML = html;
             document.getElementById('modalDetalle').classList.remove('hidden');
@@ -287,26 +294,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Importar histórico desde Excel (solo administrador) ---
     if (esAdmin) {
         const inputExcelCierres = document.getElementById('inputExcelCierres');
+        const inputZipCierres = document.getElementById('inputZipCierres');
         const btnImportarExcelCierres = document.getElementById('btnImportarExcelCierres');
         const resultadoImportacionCierres = document.getElementById('resultadoImportacionCierres');
 
-        btnImportarExcelCierres.addEventListener('click', () => inputExcelCierres.click());
-
-        inputExcelCierres.addEventListener('change', async () => {
+        btnImportarExcelCierres.addEventListener('click', async () => {
             const archivo = inputExcelCierres.files[0];
-            if (!archivo) return;
+            if (!archivo) {
+                alert('Selecciona primero el archivo Excel.');
+                return;
+            }
 
             if (!confirm('¿Seguro que quieres importar este Excel? No se detectan duplicados, así que no lo subas dos veces.')) {
-                inputExcelCierres.value = '';
                 return;
             }
 
             btnImportarExcelCierres.disabled = true;
-            btnImportarExcelCierres.textContent = 'Subiendo...';
+            btnImportarExcelCierres.textContent = 'Importando...';
             resultadoImportacionCierres.classList.add('hidden');
 
             const formData = new FormData();
-            formData.append('archivo', archivo);
+            formData.append('excel', archivo);
+            const archivoZip = inputZipCierres.files[0];
+            if (archivoZip) formData.append('zip', archivoZip);
 
             try {
                 const res = await fetch('/api/cierres/importar-excel', { method: 'POST', body: formData });
@@ -314,7 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!res.ok) throw new Error(resultado.error || 'Error al importar el archivo');
 
                 const erroresTexto = resultado.errores > 0 ? ` ${resultado.errores} fila(s) con error.` : '';
-                resultadoImportacionCierres.textContent = `Importación completada: ${resultado.creados} cierre(s) creado(s), ${resultado.omitidos} omitido(s) (sin punto de venta o fecha), de ${resultado.total} filas leídas.${erroresTexto}`;
+                resultadoImportacionCierres.textContent = `Importación completada: ${resultado.creados} cierre(s) creado(s), ${resultado.omitidos} omitido(s) (sin punto de venta o fecha), de ${resultado.total} filas leídas. ${resultado.conTicket} ticket(s) de gasto encontrados, ${resultado.conComprobanteGeneral} comprobante(s) general(es) encontrados.${erroresTexto}`;
                 resultadoImportacionCierres.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
                 resultadoImportacionCierres.classList.remove('hidden');
 
@@ -326,8 +336,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 resultadoImportacionCierres.classList.remove('hidden');
             } finally {
                 btnImportarExcelCierres.disabled = false;
-                btnImportarExcelCierres.textContent = '📄 Subir Excel';
+                btnImportarExcelCierres.textContent = '📄 Importar';
                 inputExcelCierres.value = '';
+                inputZipCierres.value = '';
             }
         });
     }
