@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         { clave: 'factura_cash', label: 'Factura Cash' },
         { clave: 'insumos', label: 'Insumos' },
         { clave: 'albaranes', label: 'Albaranes' },
+        { clave: 'tarifas_sueldos', label: 'Tarifas de Sueldos' },
         { clave: 'inout_terceros', label: 'Fichar por Otros' }
     ];
 

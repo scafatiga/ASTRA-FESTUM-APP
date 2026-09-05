@@ -45,7 +45,8 @@
         { label: 'Base Punto de Venta', href: '/base-punto-venta.html', permiso: 'base_punto_venta' },
         { label: 'Factura Cash', href: '/factura-cash.html', permiso: 'factura_cash' },
         { label: 'Insumos', href: '/productos.html', permiso: 'insumos' },
-        { label: 'Albaranes', href: '/albaranes.html', permiso: 'albaranes' }
+        { label: 'Albaranes', href: '/albaranes.html', permiso: 'albaranes' },
+        { label: 'Tarifas de Sueldos', href: '/tarifas-sueldos.html', permiso: 'tarifas_sueldos' }
     ];
 
     function rutaActual() {

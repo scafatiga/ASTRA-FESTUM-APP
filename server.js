@@ -66,7 +66,8 @@ const PAGE_PERMISOS = {
   '/base-punto-venta.html': 'base_punto_venta',
   '/factura-cash.html': 'factura_cash',
   '/productos.html': 'insumos',
-  '/albaranes.html': 'albaranes'
+  '/albaranes.html': 'albaranes',
+  '/tarifas-sueldos.html': 'tarifas_sueldos'
 };
 
 const PUBLIC_PATHS = new Set(['/login.html', '/login.js', '/nav.css', '/nav.js', '/favicon.ico', '/resetear-password.html', '/resetear-password.js']);
@@ -1705,6 +1706,20 @@ app.get('/api/proveedores-dropdown', requireAuth, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error GET /api/proveedores-dropdown:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lista ligera de Empleados (tabla personal) para desplegables de otros módulos
+// (ej. Tarifas de Sueldos), sin exigir el permiso completo "empleados".
+app.get('/api/personal-dropdown', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nombre FROM empleados WHERE estado = TRUE ORDER BY nombre ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/personal-dropdown:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4179,6 +4194,166 @@ app.post('/api/admin/migrar-r2/factura-cash', requireAdminSolo, async (req, res)
   } catch (err) {
     console.error('Error migrando factura_cash a R2:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Tarifas de Sueldos ---
+app.get('/api/tarifas-sueldos', requirePermiso('tarifas_sueldos'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.*, e.nombre AS empleado_nombre, u.nombre AS registrado_por_nombre
+       FROM tarifas_sueldos t
+       LEFT JOIN empleados e ON e.id = t.empleado_id
+       LEFT JOIN usuarios u ON u.id = t.registrado_por
+       ORDER BY t.vigente_desde DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error GET /api/tarifas-sueldos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/tarifas-sueldos/:id', requirePermiso('tarifas_sueldos'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.*, e.nombre AS empleado_nombre, u.nombre AS registrado_por_nombre
+       FROM tarifas_sueldos t
+       LEFT JOIN empleados e ON e.id = t.empleado_id
+       LEFT JOIN usuarios u ON u.id = t.registrado_por
+       WHERE t.id = $1`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Tarifa no encontrada' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error GET /api/tarifas-sueldos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tarifas-sueldos', requirePermiso('tarifas_sueldos'), async (req, res) => {
+  const { empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta } = req.body;
+
+  if (!empleado_id || !importe_dia || !horas_por_dia || !importe_hora || !vigente_desde) {
+    return res.status(400).json({ error: 'Empleado, Importe Día, Horas por Día, Importe Hora y Vigente Desde son obligatorios' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO tarifas_sueldos
+        (empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas || 0, horaxmontaje || 0, vigente_desde, vigente_hasta || null, req.session.usuario.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error POST /api/tarifas-sueldos:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tarifas-sueldos/:id', requirePermiso('tarifas_sueldos'), async (req, res) => {
+  const { empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta } = req.body;
+
+  if (!empleado_id || !importe_dia || !horas_por_dia || !importe_hora || !vigente_desde) {
+    return res.status(400).json({ error: 'Empleado, Importe Día, Horas por Día, Importe Hora y Vigente Desde son obligatorios' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE tarifas_sueldos SET
+         empleado_id=$1, importe_dia=$2, horas_por_dia=$3, importe_hora=$4,
+         extra_mas_10_horas=$5, horaxmontaje=$6, vigente_desde=$7, vigente_hasta=$8
+       WHERE id=$9
+       RETURNING *`,
+      [empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas || 0, horaxmontaje || 0, vigente_desde, vigente_hasta || null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Tarifa no encontrada' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error PUT /api/tarifas-sueldos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tarifas-sueldos/:id', requirePermiso('tarifas_sueldos'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM tarifas_sueldos WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error DELETE /api/tarifas-sueldos/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Importar Tarifas de Sueldos desde Excel (formato AppSheet) ---
+app.post('/api/tarifas-sueldos/importar-excel', requirePermiso('tarifas_sueldos'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    const { rows: empleadosDb } = await pool.query('SELECT id, nombre FROM empleados');
+    function buscarEmpleadoId(nombre) {
+      if (!nombre) return null;
+      const texto = String(nombre).trim().toLowerCase();
+      const encontrado = empleadosDb.find(e => (e.nombre || '').trim().toLowerCase() === texto);
+      return encontrado ? encontrado.id : null;
+    }
+
+    let creados = 0;
+    let omitidos = 0;
+    let sinEmpleado = 0;
+
+    for (const filaOriginal of filas) {
+      const fila = normalizarFilaExcel(filaOriginal);
+
+      const nombreEmpleado = obtenerValorPorClave(fila, 'EMPLEADO');
+      const vigenteDesdeValor = obtenerValorPorClave(fila, 'VIGENTE DESDE');
+      const importeDiaValor = obtenerValorPorClave(fila, 'IMPORTE DIA');
+      const horasPorDiaValor = obtenerValorPorClave(fila, 'HORAS POR DIA');
+      const importeHoraValor = obtenerValorPorClave(fila, 'IMPORTE HORA');
+
+      const vigenteDesde = parsearFechaSoloExcel(vigenteDesdeValor);
+      if (!nombreEmpleado || !vigenteDesde || !importeDiaValor || !horasPorDiaValor) {
+        omitidos++;
+        continue;
+      }
+
+      const empleadoId = buscarEmpleadoId(nombreEmpleado);
+      if (!empleadoId) sinEmpleado++;
+
+      const importeDia = parsearImporteEuropeo(importeDiaValor);
+      const horasPorDia = parsearImporteEuropeo(horasPorDiaValor);
+      const importeHora = parsearImporteEuropeo(importeHoraValor);
+      const extraMas10Horas = parsearImporteEuropeo(obtenerValorPorClave(fila, 'EXTRA +10 HORAS'));
+      const horaxmontaje = parsearImporteEuropeo(obtenerValorPorClave(fila, 'HORAXMONTAJE'));
+      const vigenteHastaValor = obtenerValorPorClave(fila, 'VIGENTE HASTA');
+      const vigenteHasta = parsearFechaSoloExcel(vigenteHastaValor);
+
+      await pool.query(
+        `INSERT INTO tarifas_sueldos
+          (empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [empleadoId, importeDia, horasPorDia, importeHora, extraMas10Horas, horaxmontaje, vigenteDesde, vigenteHasta]
+      );
+      creados++;
+    }
+
+    res.json({ ok: true, total: filas.length, creados, omitidos, sinEmpleado });
+  } catch (err) {
+    console.error('Error POST /api/tarifas-sueldos/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
   }
 });
 
