@@ -1467,6 +1467,75 @@ app.get('/api/proveedores/todos', requirePermiso('proveedores'), async (req, res
   }
 });
 
+// --- Importar Proveedores desde Excel (formato AppSheet) ---
+// Evita duplicados por CIF: si ya existe, actualiza en vez de crear otro.
+app.post('/api/proveedores/importar-excel', requirePermiso('proveedores'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    let creados = 0;
+    let actualizados = 0;
+    let omitidos = 0;
+
+    for (const filaOriginal of filas) {
+      const fila = normalizarFilaExcel(filaOriginal);
+
+      const nombreProveedor = String(obtenerValorPorClave(fila, 'NOMBRE_PROVEEDOR')).trim();
+      if (!nombreProveedor) {
+        omitidos++;
+        continue;
+      }
+
+      const nombreComercial = String(obtenerValorPorClave(fila, 'NOMBRE_COMERCIAL')).trim() || null;
+      const cif = String(obtenerValorPorClave(fila, 'CIF')).trim() || null;
+      const iban = String(obtenerValorPorClave(fila, 'IBAN')).trim() || null;
+      const formaPago = String(obtenerValorPorClave(fila, 'FORMA_PAGO')).trim() || null;
+      const ciudad = String(obtenerValorPorClave(fila, 'CIUDAD')).trim() || null;
+      const direccionFiscal = String(obtenerValorPorClave(fila, 'DIRECCION FISCAL')).trim() || null;
+      const telefono = String(obtenerValorPorClave(fila, 'TELEFONO')).trim() || null;
+      const email = String(obtenerValorPorClave(fila, 'EMAIL')).trim().toLowerCase() || null;
+
+      const existente = cif
+        ? await pool.query('SELECT id FROM proveedores WHERE LOWER(TRIM(cif)) = LOWER($1)', [cif])
+        : { rows: [] };
+
+      if (existente.rows[0]) {
+        await pool.query(
+          `UPDATE proveedores SET
+             nombre_proveedor=$1, nombre_comercial=$2, iban=$3, forma_pago=$4,
+             ciudad=$5, direccion_fiscal=$6, telefono=$7, email=$8
+           WHERE id=$9`,
+          [nombreProveedor, nombreComercial, iban, formaPago, ciudad, direccionFiscal, telefono, email, existente.rows[0].id]
+        );
+        actualizados++;
+      } else {
+        await pool.query(
+          `INSERT INTO proveedores
+            (nombre_proveedor, nombre_comercial, cif, iban, forma_pago, ciudad, direccion_fiscal, telefono, email, registrado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [nombreProveedor, nombreComercial, cif, iban, formaPago, ciudad, direccionFiscal, telefono, email, req.session.usuario.id]
+        );
+        creados++;
+      }
+    }
+
+    res.json({ ok: true, total: filas.length, creados, actualizados, omitidos });
+  } catch (err) {
+    console.error('Error POST /api/proveedores/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
 app.post('/api/proveedores', requirePermiso('proveedores'), async (req, res) => {
   const {
     nombre_proveedor,
