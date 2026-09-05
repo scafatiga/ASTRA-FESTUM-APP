@@ -4244,6 +4244,17 @@ app.post('/api/tarifas-sueldos', requirePermiso('tarifas_sueldos'), async (req, 
   }
 
   try {
+    // Cierra automáticamente cualquier tarifa anterior de este empleado que siga
+    // "abierta" o se solape con la fecha de inicio de la nueva, para que nunca
+    // queden dos tarifas vigentes al mismo tiempo para la misma persona.
+    await pool.query(
+      `UPDATE tarifas_sueldos
+       SET vigente_hasta = ($1::date - INTERVAL '1 day')::date
+       WHERE empleado_id = $2
+         AND (vigente_hasta IS NULL OR vigente_hasta >= $1::date)`,
+      [vigente_desde, empleado_id]
+    );
+
     const { rows } = await pool.query(
       `INSERT INTO tarifas_sueldos
         (empleado_id, importe_dia, horas_por_dia, importe_hora, extra_mas_10_horas, horaxmontaje, vigente_desde, vigente_hasta, registrado_por)
