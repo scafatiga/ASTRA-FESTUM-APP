@@ -769,13 +769,13 @@ app.post('/api/cierres/importar-excel', requirePermiso('cierre'), upload.single(
 
       const fechaCompleta = combinarFechaHoraExcel(fechaValor, horaValor) || new Date();
 
-      const totalTarjeta = parsearImporteExcel(obtenerValorPorClave(fila, 'VENTA TARJETA'));
-      const totalEfectivo = parsearImporteExcel(obtenerValorPorClave(fila, 'VENTA EFECTIVO'));
+      const totalTarjeta = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA TARJETA'));
+      const totalEfectivo = parsearImporteEuropeo(obtenerValorPorClave(fila, 'VENTA EFECTIVO'));
 
       const gastos = [];
       for (let g = 1; g <= 5; g++) {
         const descripcion = obtenerValorPorClave(fila, `CENTRO DE COSTO ${g}`);
-        const importe = parsearImporteExcel(obtenerValorPorClave(fila, `IMPORTE GASTO ${g}`));
+        const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `IMPORTE GASTO ${g}`));
         if (descripcion && importe > 0) {
           gastos.push({ descripcion: String(descripcion).trim(), importe, punto_venta: String(puntoVenta).trim() });
         }
@@ -784,7 +784,7 @@ app.post('/api/cierres/importar-excel', requirePermiso('cierre'), upload.single(
       const adelantos = [];
       for (let p = 1; p <= 4; p++) {
         const empleado = obtenerValorPorClave(fila, `PAGO ${p}: EMPLEADO`);
-        const importe = parsearImporteExcel(obtenerValorPorClave(fila, `PAGO ${p}: IMPORTE`));
+        const importe = parsearImporteEuropeo(obtenerValorPorClave(fila, `PAGO ${p}: IMPORTE`));
         const pvPago = obtenerValorPorClave(fila, `PUNTO DE VENTA PAGO ${p}`) || puntoVenta;
         if (empleado && importe > 0) {
           adelantos.push({ empleado: String(empleado).trim(), importe, punto_venta: String(pvPago).trim() });

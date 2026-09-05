@@ -19,6 +19,20 @@
             </div>
         </div>
 
+        <!-- Importar histórico desde Excel (solo administrador) -->
+        <div id="bloqueImportarCierres" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex-1 text-sm text-gray-700">
+                <span class="font-semibold">Importar Histórico desde Excel</span> — sube el Excel con el formato de AppSheet (columnas FECHA, HORA, PUNTO DE VENTA, VENTA TARJETA, VENTA EFECTIVO, CENTRO DE COSTO 1-5, IMPORTE GASTO 1-5, PAGO 1-4: EMPLEADO/IMPORTE, etc.). No lo subas dos veces: no detecta duplicados.
+            </div>
+            <div>
+                <input type="file" id="inputExcelCierres" accept=".xlsx,.xls" class="hidden">
+                <button type="button" id="btnImportarExcelCierres" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition whitespace-nowrap">
+                    📄 Subir Excel
+                </button>
+            </div>
+        </div>
+        <p id="resultadoImportacionCierres" class="text-sm mb-6 hidden"></p>
+
         <input type="text" id="buscadorCierres" placeholder="Buscar por fecha o punto de venta..." class="w-full border p-2 rounded mb-3 focus:ring-2 focus:ring-blue-500">
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">

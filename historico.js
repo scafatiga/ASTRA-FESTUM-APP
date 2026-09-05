@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (esAdmin) {
         document.getElementById('thAccion').classList.remove('hidden');
+        document.getElementById('bloqueImportarCierres').classList.remove('hidden');
     }
 
     function formatearFechaHora(rawFecha) {
@@ -281,6 +282,54 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error(err);
             alert('No se pudo eliminar el cierre.');
         }
+    }
+
+    // --- Importar histórico desde Excel (solo administrador) ---
+    if (esAdmin) {
+        const inputExcelCierres = document.getElementById('inputExcelCierres');
+        const btnImportarExcelCierres = document.getElementById('btnImportarExcelCierres');
+        const resultadoImportacionCierres = document.getElementById('resultadoImportacionCierres');
+
+        btnImportarExcelCierres.addEventListener('click', () => inputExcelCierres.click());
+
+        inputExcelCierres.addEventListener('change', async () => {
+            const archivo = inputExcelCierres.files[0];
+            if (!archivo) return;
+
+            if (!confirm('¿Seguro que quieres importar este Excel? No se detectan duplicados, así que no lo subas dos veces.')) {
+                inputExcelCierres.value = '';
+                return;
+            }
+
+            btnImportarExcelCierres.disabled = true;
+            btnImportarExcelCierres.textContent = 'Subiendo...';
+            resultadoImportacionCierres.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('archivo', archivo);
+
+            try {
+                const res = await fetch('/api/cierres/importar-excel', { method: 'POST', body: formData });
+                const resultado = await res.json();
+                if (!res.ok) throw new Error(resultado.error || 'Error al importar el archivo');
+
+                const erroresTexto = resultado.errores > 0 ? ` ${resultado.errores} fila(s) con error.` : '';
+                resultadoImportacionCierres.textContent = `Importación completada: ${resultado.creados} cierre(s) creado(s), ${resultado.omitidos} omitido(s) (sin punto de venta o fecha), de ${resultado.total} filas leídas.${erroresTexto}`;
+                resultadoImportacionCierres.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+                resultadoImportacionCierres.classList.remove('hidden');
+
+                cargarCierres();
+            } catch (err) {
+                console.error(err);
+                resultadoImportacionCierres.textContent = err.message || 'No se pudo importar el archivo.';
+                resultadoImportacionCierres.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+                resultadoImportacionCierres.classList.remove('hidden');
+            } finally {
+                btnImportarExcelCierres.disabled = false;
+                btnImportarExcelCierres.textContent = '📄 Subir Excel';
+                inputExcelCierres.value = '';
+            }
+        });
     }
 
     await cargarCierres();
