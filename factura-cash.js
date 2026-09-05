@@ -267,6 +267,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Importar histórico desde Excel + ZIP ---
+    const inputExcelFacturaCash = document.getElementById('inputExcelFacturaCash');
+    const inputZipFacturaCash = document.getElementById('inputZipFacturaCash');
+    const btnImportarFacturaCash = document.getElementById('btnImportarFacturaCash');
+    const resultadoImportacionFacturaCash = document.getElementById('resultadoImportacionFacturaCash');
+
+    btnImportarFacturaCash.addEventListener('click', async () => {
+        const archivoExcel = inputExcelFacturaCash.files[0];
+        if (!archivoExcel) {
+            alert('Selecciona primero el archivo Excel.');
+            return;
+        }
+
+        btnImportarFacturaCash.disabled = true;
+        btnImportarFacturaCash.textContent = 'Importando...';
+        resultadoImportacionFacturaCash.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('excel', archivoExcel);
+        const archivoZip = inputZipFacturaCash.files[0];
+        if (archivoZip) formData.append('zip', archivoZip);
+
+        try {
+            const res = await fetch('/api/factura-cash/importar-excel-zip', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar');
+
+            let texto = `Importación completada: ${resultado.creados} factura(s) creada(s) de ${resultado.total} filas leídas. `;
+            texto += `${resultado.conFactura} con archivo, ${resultado.sinFactura} sin archivo.`;
+            if (resultado.omitidos > 0) texto += ` ${resultado.omitidos} fila(s) omitida(s) (sin fecha válida).`;
+            if (resultado.sinPuntoVenta > 0) texto += ` ${resultado.sinPuntoVenta} fila(s) con un Punto de Venta que no se encontró.`;
+
+            resultadoImportacionFacturaCash.textContent = texto;
+            resultadoImportacionFacturaCash.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacionFacturaCash.classList.remove('hidden');
+
+            cargarFacturas();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacionFacturaCash.textContent = err.message || 'No se pudo importar.';
+            resultadoImportacionFacturaCash.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacionFacturaCash.classList.remove('hidden');
+        } finally {
+            btnImportarFacturaCash.disabled = false;
+            btnImportarFacturaCash.textContent = '📄 Importar';
+            inputExcelFacturaCash.value = '';
+            inputZipFacturaCash.value = '';
+        }
+    });
+
     await cargarPuntosVentaSelect();
     await cargarFacturas();
 });
