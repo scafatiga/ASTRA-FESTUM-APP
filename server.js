@@ -2353,12 +2353,17 @@ app.post('/api/fichajes', requirePermiso('inout'), async (req, res) => {
 
   try {
     const abierto = await pool.query(
-      `SELECT id FROM fichajes WHERE empleado_id = $1 AND hora_salida IS NULL ORDER BY hora_entrada DESC LIMIT 1`,
+      `SELECT id, hora_entrada FROM fichajes WHERE empleado_id = $1 AND hora_salida IS NULL ORDER BY hora_entrada DESC LIMIT 1`,
       [empleado_id]
     );
 
     if (abierto.rows[0]) {
-      // Cierra el turno abierto con la Salida
+      // Cierra el turno abierto con la Salida — nunca antes de su propia Entrada
+      if (momento < new Date(abierto.rows[0].hora_entrada)) {
+        return res.status(400).json({
+          error: 'La hora de Salida no puede ser anterior a la hora de Entrada de ese turno. Corrígelo desde Editar en el listado si hace falta.'
+        });
+      }
       const { rows } = await pool.query(
         `UPDATE fichajes SET hora_salida = $1 WHERE id = $2 RETURNING *`,
         [momento.toISOString(), abierto.rows[0].id]
@@ -2425,6 +2430,9 @@ app.put('/api/fichajes/:id', requirePermiso('inout'), async (req, res) => {
 
   if (!empleado_id || !punto_venta_id || !hora_entrada) {
     return res.status(400).json({ error: 'Empleado, Punto de Venta y Hora de Entrada son obligatorios' });
+  }
+  if (hora_salida && new Date(hora_salida) < new Date(hora_entrada)) {
+    return res.status(400).json({ error: 'La hora de Salida no puede ser anterior a la hora de Entrada' });
   }
 
   try {
