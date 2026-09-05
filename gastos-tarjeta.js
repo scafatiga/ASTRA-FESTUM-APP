@@ -244,6 +244,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Importar histórico desde Excel + ZIP ---
+    const inputExcelGastos = document.getElementById('inputExcelGastos');
+    const inputZipGastos = document.getElementById('inputZipGastos');
+    const btnImportarGastos = document.getElementById('btnImportarGastos');
+    const resultadoImportacionGastos = document.getElementById('resultadoImportacionGastos');
+
+    btnImportarGastos.addEventListener('click', async () => {
+        const archivoExcel = inputExcelGastos.files[0];
+        if (!archivoExcel) {
+            alert('Selecciona primero el archivo Excel.');
+            return;
+        }
+
+        btnImportarGastos.disabled = true;
+        btnImportarGastos.textContent = 'Importando...';
+        resultadoImportacionGastos.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('excel', archivoExcel);
+        const archivoZip = inputZipGastos.files[0];
+        if (archivoZip) formData.append('zip', archivoZip);
+
+        try {
+            const res = await fetch('/api/gastos-tarjeta/importar-excel-zip', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar');
+
+            let texto = `Importación completada: ${resultado.creados} gasto(s) creado(s) de ${resultado.total} filas leídas. `;
+            texto += `${resultado.conFactura} con factura, ${resultado.sinFactura} sin factura.`;
+            if (resultado.omitidos > 0) texto += ` ${resultado.omitidos} fila(s) omitida(s) (sin fecha válida).`;
+            if (resultado.sinPuntoVenta > 0) texto += ` ${resultado.sinPuntoVenta} fila(s) con un Punto de Venta que no se encontró.`;
+            if (resultado.sinProveedor > 0) texto += ` ${resultado.sinProveedor} fila(s) con un Proveedor que no se encontró.`;
+
+            resultadoImportacionGastos.textContent = texto;
+            resultadoImportacionGastos.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacionGastos.classList.remove('hidden');
+
+            cargarGastos();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacionGastos.textContent = err.message || 'No se pudo importar.';
+            resultadoImportacionGastos.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacionGastos.classList.remove('hidden');
+        } finally {
+            btnImportarGastos.disabled = false;
+            btnImportarGastos.textContent = '📄 Importar';
+            inputExcelGastos.value = '';
+            inputZipGastos.value = '';
+        }
+    });
+
     await cargarDesplegables();
     await cargarGastos();
 });
