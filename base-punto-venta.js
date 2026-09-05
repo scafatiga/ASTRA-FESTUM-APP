@@ -283,6 +283,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Importar desde Excel ---
+    const inputExcel = document.getElementById('inputExcel');
+    const btnImportarExcel = document.getElementById('btnImportarExcel');
+    const resultadoImportacion = document.getElementById('resultadoImportacion');
+
+    btnImportarExcel.addEventListener('click', () => inputExcel.click());
+
+    inputExcel.addEventListener('change', async () => {
+        const archivo = inputExcel.files[0];
+        if (!archivo) return;
+
+        btnImportarExcel.disabled = true;
+        btnImportarExcel.textContent = 'Subiendo...';
+        resultadoImportacion.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('archivo', archivo);
+
+        try {
+            const res = await fetch('/api/base-punto-venta/importar-excel', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar el archivo');
+
+            let texto = `Importación completada: ${resultado.creados} traspaso(s) creado(s) de ${resultado.total} filas leídas.`;
+            if (resultado.omitidos > 0) texto += ` ${resultado.omitidos} fila(s) omitida(s) (sin fecha válida).`;
+            if (resultado.mismoOrigenDestino > 0) texto += ` ${resultado.mismoOrigenDestino} fila(s) omitida(s) (origen y destino iguales).`;
+            if (resultado.sinPuntoVenta > 0) texto += ` ${resultado.sinPuntoVenta} fila(s) con algún Punto de Venta que no se encontró.`;
+
+            resultadoImportacion.textContent = texto;
+            resultadoImportacion.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacion.classList.remove('hidden');
+
+            cargarTraspasos();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacion.textContent = err.message || 'No se pudo importar el archivo.';
+            resultadoImportacion.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacion.classList.remove('hidden');
+        } finally {
+            btnImportarExcel.disabled = false;
+            btnImportarExcel.textContent = '📄 Subir Excel';
+            inputExcel.value = '';
+        }
+    });
+
     await cargarPuntosVentaSelect();
     await cargarTraspasos();
 });

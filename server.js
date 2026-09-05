@@ -2449,6 +2449,94 @@ app.get('/api/base-punto-venta/:id', requirePermiso('base_punto_venta'), async (
   }
 });
 
+// --- Importar Base Punto de Venta desde Excel (formato AppSheet) ---
+app.post('/api/base-punto-venta/importar-excel', requirePermiso('base_punto_venta'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    const { rows: puntosVentaDb } = await pool.query('SELECT id, nombre FROM puntos_venta');
+    function buscarPuntoVentaId(nombre) {
+      if (!nombre) return null;
+      const texto = String(nombre).trim().toLowerCase();
+      const encontrado = puntosVentaDb.find(pv => (pv.nombre || '').trim().toLowerCase() === texto);
+      return encontrado ? encontrado.id : null;
+    }
+
+    const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
+    function buscarUsuarioId(nombreOEmail) {
+      if (!nombreOEmail) return null;
+      const texto = String(nombreOEmail).trim().toLowerCase();
+      const encontrado = usuariosDb.find(u =>
+        (u.nombre || '').trim().toLowerCase() === texto ||
+        (u.email || '').trim().toLowerCase() === texto
+      );
+      return encontrado ? encontrado.id : null;
+    }
+
+    let creados = 0;
+    let omitidos = 0;
+    let mismoOrigenDestino = 0;
+    let sinPuntoVenta = 0;
+
+    for (const filaOriginal of filas) {
+      const fila = normalizarFilaExcel(filaOriginal);
+
+      const fechaValor = obtenerValorPorClave(fila, 'FECHA');
+      const importeValor = obtenerValorPorClave(fila, 'IMPORTE');
+      const nombreOrigen = obtenerValorPorClave(fila, 'PUNTO DE VENTA ORIGEN');
+      const nombreDestino = obtenerValorPorClave(fila, 'PUNTO DE VENTA DESTINO');
+      const usuario = obtenerValorPorClave(fila, 'USUARIO');
+
+      const fecha = parsearFechaSoloExcel(fechaValor);
+      if (!fecha) {
+        omitidos++;
+        continue;
+      }
+
+      const importe = parsearImporteEuropeo(importeValor);
+      const origenId = buscarPuntoVentaId(nombreOrigen);
+      const destinoId = buscarPuntoVentaId(nombreDestino);
+      if ((nombreOrigen && !origenId) || (nombreDestino && !destinoId)) sinPuntoVenta++;
+
+      if (origenId && destinoId && origenId === destinoId) {
+        mismoOrigenDestino++;
+        continue;
+      }
+
+      const usuarioId = buscarUsuarioId(usuario);
+
+      await pool.query(
+        `INSERT INTO base_punto_venta (fecha, punto_venta_origen_id, punto_venta_destino_id, importe, registrado_por)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [fecha, origenId, destinoId, importe, usuarioId]
+      );
+      creados++;
+    }
+
+    res.json({
+      ok: true,
+      total: filas.length,
+      creados,
+      omitidos,
+      mismoOrigenDestino,
+      sinPuntoVenta
+    });
+  } catch (err) {
+    console.error('Error POST /api/base-punto-venta/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
 app.post('/api/base-punto-venta', requirePermiso('base_punto_venta'), async (req, res) => {
   const { fecha, punto_venta_origen_id, punto_venta_destino_id, importe } = req.body;
 
