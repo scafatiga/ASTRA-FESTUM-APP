@@ -84,11 +84,119 @@
                 </nav>
                 <div class="af-menu-footer">
                     ${usuario ? `<div class="af-menu-usuario">${usuario.nombre}<br><span>${usuario.email}</span></div>` : ''}
+                    ${usuario && usuario.es_admin ? `<button id="afMigrarR2Btn" class="af-logout-btn" style="background:#e5e7eb;color:#1f2937;margin-bottom:8px;">Migrar Archivos a R2</button>` : ''}
+                    <button id="afCambiarPasswordBtn" class="af-logout-btn" style="background:#e5e7eb;color:#1f2937;margin-bottom:8px;">Cambiar Contraseña</button>
                     <button id="afLogoutBtn" class="af-logout-btn">Cerrar sesión</button>
                 </div>
             </div>
         `;
         document.body.appendChild(overlay);
+
+        // Modal de cambio de contraseña (se inyecta una sola vez, fuera del menú lateral)
+        const modalPassword = document.createElement('div');
+        modalPassword.id = 'afModalPassword';
+        modalPassword.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:60;align-items:center;justify-content:center;padding:16px;';
+        modalPassword.innerHTML = `
+            <div style="background:#fff;border-radius:8px;max-width:360px;width:100%;padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <h2 style="font-size:1.1rem;font-weight:bold;color:#1f2937;margin:0;">Cambiar Contraseña</h2>
+                    <button id="afCerrarModalPassword" style="background:none;border:none;font-size:1.25rem;color:#9ca3af;cursor:pointer;line-height:1;">✕</button>
+                </div>
+                <form id="afFormPassword" style="display:flex;flex-direction:column;gap:12px;">
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Contraseña actual:</label>
+                        <input type="password" id="afPasswordActual" required style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Contraseña nueva: <span style="font-weight:400;color:#6b7280;font-size:0.75rem;">(mínimo 8 caracteres)</span></label>
+                        <input type="password" id="afPasswordNueva" required minlength="8" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Repetir contraseña nueva:</label>
+                        <input type="password" id="afPasswordNuevaRepetir" required minlength="8" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px;box-sizing:border-box;">
+                    </div>
+                    <p id="afPasswordError" style="display:none;color:#dc2626;font-size:0.875rem;margin:0;"></p>
+                    <button type="submit" style="width:100%;background:#2563eb;color:#fff;font-weight:500;padding:10px;border:none;border-radius:8px;cursor:pointer;">Guardar Contraseña</button>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modalPassword);
+
+        document.getElementById('afCambiarPasswordBtn').addEventListener('click', () => {
+            overlay.classList.remove('open');
+            document.getElementById('afFormPassword').reset();
+            document.getElementById('afPasswordError').style.display = 'none';
+            modalPassword.style.display = 'flex';
+        });
+        document.getElementById('afCerrarModalPassword').addEventListener('click', () => {
+            modalPassword.style.display = 'none';
+        });
+        document.getElementById('afFormPassword').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errorEl = document.getElementById('afPasswordError');
+            errorEl.style.display = 'none';
+
+            const actual = document.getElementById('afPasswordActual').value;
+            const nueva = document.getElementById('afPasswordNueva').value;
+            const repetir = document.getElementById('afPasswordNuevaRepetir').value;
+
+            if (nueva !== repetir) {
+                errorEl.textContent = 'La contraseña nueva y su repetición no coinciden.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/cambiar-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password_actual: actual, password_nueva: nueva })
+                });
+                const resultado = await res.json();
+                if (!res.ok) throw new Error(resultado.error || 'Error al cambiar la contraseña');
+
+                alert('Contraseña actualizada correctamente.');
+                modalPassword.style.display = 'none';
+            } catch (err) {
+                errorEl.textContent = err.message || 'No se pudo cambiar la contraseña.';
+                errorEl.style.display = 'block';
+            }
+        });
+
+        // --- Migrar Archivos a R2 (solo administrador) ---
+        const btnMigrarR2 = document.getElementById('afMigrarR2Btn');
+        if (btnMigrarR2) {
+            btnMigrarR2.addEventListener('click', async () => {
+                if (!confirm('Esto moverá a Cloudflare R2 todos los archivos que todavía estén guardados en la base de datos (fotos de DNI, comprobantes, facturas). Puede tardar unos minutos. ¿Continuar?')) return;
+
+                overlay.classList.remove('open');
+                btnMigrarR2.disabled = true;
+                btnMigrarR2.textContent = 'Migrando...';
+
+                const tablas = [
+                    { ruta: '/api/admin/migrar-r2/empleados', nombre: 'Empleados (fotos DNI)' },
+                    { ruta: '/api/admin/migrar-r2/ingresos', nombre: 'Ingresos (comprobantes)' },
+                    { ruta: '/api/admin/migrar-r2/gastos-tarjeta', nombre: 'Gastos Tarjeta (facturas)' },
+                    { ruta: '/api/admin/migrar-r2/factura-cash', nombre: 'Facturas Cash (facturas)' }
+                ];
+
+                let resumen = '';
+                for (const tabla of tablas) {
+                    try {
+                        const res = await fetch(tabla.ruta, { method: 'POST' });
+                        const datos = await res.json();
+                        if (!res.ok) throw new Error(datos.error || 'Error desconocido');
+                        resumen += `${tabla.nombre}: ${datos.migrados} migrado(s), ${datos.errores} error(es), de ${datos.total} encontrados.\n`;
+                    } catch (err) {
+                        resumen += `${tabla.nombre}: FALLÓ (${err.message})\n`;
+                    }
+                }
+
+                alert('Migración a R2 terminada:\n\n' + resumen);
+                btnMigrarR2.disabled = false;
+                btnMigrarR2.textContent = 'Migrar Archivos a R2';
+            });
+        }
 
         document.getElementById('afMenuBtn').addEventListener('click', () => overlay.classList.add('open'));
         document.getElementById('afMenuClose').addEventListener('click', () => overlay.classList.remove('open'));

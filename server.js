@@ -3354,5 +3354,78 @@ app.delete('/api/fichajes/:id', requirePermiso('inout'), async (req, res) => {
   }
 });
 
+// --- Migración de archivos ya guardados en Postgres hacia Cloudflare R2 (solo administrador) ---
+async function migrarTablaAR2(tabla, columnaData, columnaMime, columnaNombre, columnaR2Key, carpeta) {
+  const { rows } = await pool.query(
+    `SELECT id, ${columnaData} AS data, ${columnaMime} AS mime, ${columnaNombre} AS nombre
+     FROM ${tabla} WHERE ${columnaData} IS NOT NULL AND ${columnaR2Key} IS NULL`
+  );
+
+  let migrados = 0;
+  let errores = 0;
+
+  for (const fila of rows) {
+    try {
+      const r2Key = await subirArchivoR2(carpeta, fila.nombre || 'archivo', fila.data, fila.mime || 'application/octet-stream');
+      await pool.query(
+        `UPDATE ${tabla} SET ${columnaR2Key} = $1, ${columnaData} = NULL WHERE id = $2`,
+        [r2Key, fila.id]
+      );
+      migrados++;
+    } catch (err) {
+      console.error(`Error migrando ${tabla} id=${fila.id} a R2:`, err.message);
+      errores++;
+    }
+  }
+
+  return { total: rows.length, migrados, errores };
+}
+
+function requireAdminSolo(req, res, next) {
+  if (!req.session || !req.session.usuario) return res.status(401).json({ error: 'No autenticado' });
+  if (!req.session.usuario.es_admin) return res.status(403).json({ error: 'Solo un administrador puede ejecutar esto' });
+  next();
+}
+
+app.post('/api/admin/migrar-r2/empleados', requireAdminSolo, async (req, res) => {
+  try {
+    const resultado = await migrarTablaAR2('empleados', 'foto_dni_data', 'foto_dni_mime', 'foto_dni_nombre_original', 'foto_dni_r2_key', 'empleados/foto-dni');
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error migrando empleados a R2:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/migrar-r2/ingresos', requireAdminSolo, async (req, res) => {
+  try {
+    const resultado = await migrarTablaAR2('ingresos', 'comprobante_data', 'comprobante_mime', 'comprobante_nombre_original', 'comprobante_r2_key', 'ingresos/comprobante');
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error migrando ingresos a R2:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/migrar-r2/gastos-tarjeta', requireAdminSolo, async (req, res) => {
+  try {
+    const resultado = await migrarTablaAR2('gastos_tarjeta', 'factura_data', 'factura_mime', 'factura_nombre_original', 'factura_r2_key', 'gastos-tarjeta/factura');
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error migrando gastos_tarjeta a R2:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/migrar-r2/factura-cash', requireAdminSolo, async (req, res) => {
+  try {
+    const resultado = await migrarTablaAR2('factura_cash', 'factura_data', 'factura_mime', 'factura_nombre_original', 'factura_r2_key', 'factura-cash/factura');
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error migrando factura_cash a R2:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
