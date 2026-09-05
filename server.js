@@ -1713,6 +1713,161 @@ app.get('/api/ingresos/:id/comprobante', requirePermiso('ingresos'), async (req,
   }
 });
 
+// --- Importar Ingresos históricos desde Excel + ZIP de comprobantes (formato AppSheet) ---
+function parsearImporteEuropeo(valor) {
+  if (valor === undefined || valor === null || valor === '') return 0;
+  if (typeof valor === 'number') return valor;
+  let texto = String(valor).replace(/[€\s]/g, '');
+  if (texto.includes(',')) {
+    // Formato europeo: punto = miles, coma = decimal
+    texto = texto.replace(/\./g, '').replace(',', '.');
+  }
+  const n = parseFloat(texto);
+  return isNaN(n) ? 0 : n;
+}
+
+function normalizarRutaArchivo(ruta) {
+  return String(ruta || '').replace(/\\/g, '/').replace(/^\/+/, '').trim().toUpperCase();
+}
+
+function mimePorExtensionGenerico(nombreArchivo) {
+  const ext = String(nombreArchivo).split('.').pop().toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'pdf') return 'application/pdf';
+  return null;
+}
+
+app.post(
+  '/api/ingresos/importar-excel-zip',
+  requirePermiso('ingresos'),
+  upload.fields([{ name: 'excel', maxCount: 1 }, { name: 'zip', maxCount: 1 }]),
+  async (req, res) => {
+    if (!req.files || !req.files.excel || !req.files.excel[0]) {
+      return res.status(400).json({ error: 'Falta el archivo Excel' });
+    }
+
+    try {
+      const libro = XLSX.read(req.files.excel[0].buffer, { type: 'buffer', cellDates: true });
+      const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+      if (filas.length === 0) {
+        return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+      }
+
+      // Índice de archivos del ZIP (si se subió)
+      let entradasZip = [];
+      if (req.files.zip && req.files.zip[0]) {
+        const zip = new AdmZip(req.files.zip[0].buffer);
+        entradasZip = zip.getEntries()
+          .filter(e => !e.isDirectory)
+          .map(e => ({ rutaNormalizada: normalizarRutaArchivo(e.entryName), entrada: e }));
+      }
+
+      function buscarArchivoZip(rutaExcel) {
+        if (!rutaExcel || entradasZip.length === 0) return null;
+        const rutaNorm = normalizarRutaArchivo(rutaExcel);
+        let encontrado = entradasZip.find(e => e.rutaNormalizada.endsWith(rutaNorm));
+        if (!encontrado) encontrado = entradasZip.find(e => rutaNorm.endsWith(e.rutaNormalizada));
+        if (!encontrado) {
+          const nombreArchivo = rutaNorm.split('/').pop();
+          encontrado = entradasZip.find(e => e.rutaNormalizada.split('/').pop() === nombreArchivo);
+        }
+        return encontrado ? encontrado.entrada : null;
+      }
+
+      const { rows: puntosVentaDb } = await pool.query('SELECT id, nombre FROM puntos_venta');
+      function buscarPuntoVentaId(nombre) {
+        if (!nombre) return null;
+        const texto = String(nombre).trim().toLowerCase();
+        const encontrado = puntosVentaDb.find(pv => (pv.nombre || '').trim().toLowerCase() === texto);
+        return encontrado ? encontrado.id : null;
+      }
+
+      const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
+      function buscarUsuarioId(nombreOEmail) {
+        if (!nombreOEmail) return null;
+        const texto = String(nombreOEmail).trim().toLowerCase();
+        const encontrado = usuariosDb.find(u =>
+          (u.nombre || '').trim().toLowerCase() === texto ||
+          (u.email || '').trim().toLowerCase() === texto
+        );
+        return encontrado ? encontrado.id : null;
+      }
+
+      let creados = 0;
+      let omitidos = 0;
+      let conComprobante = 0;
+      let sinComprobante = 0;
+      let sinPuntoVenta = 0;
+
+      for (const filaOriginal of filas) {
+        const fila = normalizarFilaExcel(filaOriginal);
+
+        const fechaValor = obtenerValorPorClave(fila, 'FECHA');
+        const importeValor = obtenerValorPorClave(fila, 'IMPORTE');
+        const nombrePuntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
+        const rutaArchivo = obtenerValorPorClave(fila, '_');
+        const usuario = obtenerValorPorClave(fila, 'USUARIO');
+
+        const fecha = parsearFechaSoloExcel(fechaValor);
+        if (!fecha) {
+          omitidos++;
+          continue;
+        }
+
+        const importe = parsearImporteEuropeo(importeValor);
+        const puntoVentaId = buscarPuntoVentaId(nombrePuntoVenta);
+        if (nombrePuntoVenta && !puntoVentaId) sinPuntoVenta++;
+
+        const usuarioId = buscarUsuarioId(usuario);
+
+        const archivoEncontrado = buscarArchivoZip(rutaArchivo);
+        let comprobanteData = null;
+        let comprobanteMime = null;
+        let comprobanteNombre = null;
+
+        if (archivoEncontrado) {
+          const nombreArchivo = archivoEncontrado.entryName.split('/').pop();
+          const mime = mimePorExtensionGenerico(nombreArchivo);
+          if (mime) {
+            comprobanteData = archivoEncontrado.getData();
+            comprobanteMime = mime;
+            comprobanteNombre = nombreArchivo;
+            conComprobante++;
+          } else {
+            sinComprobante++;
+          }
+        } else {
+          sinComprobante++;
+        }
+
+        await pool.query(
+          `INSERT INTO ingresos
+            (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original, registrado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [fecha, importe, puntoVentaId, comprobanteData, comprobanteMime, comprobanteNombre, usuarioId]
+        );
+        creados++;
+      }
+
+      res.json({
+        ok: true,
+        total: filas.length,
+        creados,
+        omitidos,
+        conComprobante,
+        sinComprobante,
+        sinPuntoVenta
+      });
+    } catch (err) {
+      console.error('Error POST /api/ingresos/importar-excel-zip:', err.message);
+      res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que el Excel y el ZIP son válidos.' });
+    }
+  }
+);
+
 app.post('/api/ingresos', requirePermiso('ingresos'), upload.single('comprobante'), async (req, res) => {
   const { fecha, importe, punto_venta_id } = req.body;
 

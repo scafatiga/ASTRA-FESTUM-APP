@@ -223,6 +223,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Importar histórico desde Excel + ZIP ---
+    const inputExcelIngresos = document.getElementById('inputExcelIngresos');
+    const inputZipIngresos = document.getElementById('inputZipIngresos');
+    const btnImportarIngresos = document.getElementById('btnImportarIngresos');
+    const resultadoImportacionIngresos = document.getElementById('resultadoImportacionIngresos');
+
+    btnImportarIngresos.addEventListener('click', async () => {
+        const archivoExcel = inputExcelIngresos.files[0];
+        if (!archivoExcel) {
+            alert('Selecciona primero el archivo Excel.');
+            return;
+        }
+
+        btnImportarIngresos.disabled = true;
+        btnImportarIngresos.textContent = 'Importando...';
+        resultadoImportacionIngresos.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('excel', archivoExcel);
+        const archivoZip = inputZipIngresos.files[0];
+        if (archivoZip) formData.append('zip', archivoZip);
+
+        try {
+            const res = await fetch('/api/ingresos/importar-excel-zip', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar');
+
+            let texto = `Importación completada: ${resultado.creados} ingreso(s) creado(s) de ${resultado.total} filas leídas. `;
+            texto += `${resultado.conComprobante} con comprobante, ${resultado.sinComprobante} sin comprobante.`;
+            if (resultado.omitidos > 0) texto += ` ${resultado.omitidos} fila(s) omitida(s) (sin fecha válida).`;
+            if (resultado.sinPuntoVenta > 0) texto += ` ${resultado.sinPuntoVenta} fila(s) con un Punto de Venta que no se encontró.`;
+
+            resultadoImportacionIngresos.textContent = texto;
+            resultadoImportacionIngresos.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacionIngresos.classList.remove('hidden');
+
+            cargarIngresos();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacionIngresos.textContent = err.message || 'No se pudo importar.';
+            resultadoImportacionIngresos.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacionIngresos.classList.remove('hidden');
+        } finally {
+            btnImportarIngresos.disabled = false;
+            btnImportarIngresos.textContent = '📄 Importar';
+            inputExcelIngresos.value = '';
+            inputZipIngresos.value = '';
+        }
+    });
+
     await cargarPuntosVentaSelect();
     await cargarIngresos();
 });
