@@ -1295,6 +1295,10 @@ app.post('/api/personal/importar-excel', requirePermiso('empleados'), upload.sin
       }
 
       const dni = String(obtenerValorPorClave(fila, 'DNI')).trim() || null;
+      // Algunos empleados no tienen DNI real todavía y quedan con un valor de relleno
+      // (ceros, con o sin letra). Nunca hay que usar eso para saber si "es la misma persona".
+      const dniEsRelleno = dni && /^0+[a-zA-Z]?$/.test(dni);
+      const dniParaCruzar = dniEsRelleno ? null : dni;
       const numeroSegSocial = String(obtenerValorPorClave(fila, 'Nº SEG. SOCIAL')).trim() || null;
       const nacionalidad = String(obtenerValorPorClave(fila, 'NACIONALIDAD')).trim() || null;
       const fechaNacimiento = parsearFechaSoloExcel(obtenerValorPorClave(fila, 'FECHA DE NACIMIENTO'));
@@ -1311,8 +1315,8 @@ app.post('/api/personal/importar-excel', requirePermiso('empleados'), upload.sin
       const puntoVentaId = buscarPuntoVentaId(nombrePuntoVenta);
       if (nombrePuntoVenta && !puntoVentaId) sinPuntoVenta++;
 
-      const existente = dni
-        ? await pool.query('SELECT id FROM empleados WHERE LOWER(TRIM(dni)) = LOWER($1)', [dni])
+      const existente = dniParaCruzar
+        ? await pool.query('SELECT id FROM empleados WHERE LOWER(TRIM(dni)) = LOWER($1)', [dniParaCruzar])
         : { rows: [] };
 
       if (existente.rows[0]) {
