@@ -59,6 +59,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    const iconoReloj = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 animate-spin">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+        </svg>`;
+
     function actualizarBoton() {
         const empleado = empleadoSeleccionadoId
             ? miPanel.empleados.find(e => e.id === empleadoSeleccionadoId)
@@ -67,14 +73,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!empleado) {
             btnFichar.disabled = true;
             btnFichar.className = 'w-full h-20 rounded-lg text-xl font-bold text-white transition bg-gray-300';
-            btnFichar.textContent = miPanel.yo ? 'Selecciona un empleado' : 'Elige por quién vas a fichar';
+            btnFichar.innerHTML = miPanel.yo ? 'Selecciona un empleado' : 'Elige por quién vas a fichar';
             return;
         }
 
         const esSalida = empleado.proxima_accion === 'SALIDA';
         btnFichar.disabled = false;
-        btnFichar.className = `w-full h-20 rounded-lg text-xl font-bold text-white transition ${esSalida ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`;
-        btnFichar.textContent = esSalida ? 'Fichar Salida' : 'Fichar Entrada';
+        btnFichar.className = `w-full h-20 rounded-lg text-white transition flex flex-col items-center justify-center gap-0.5 ${esSalida ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`;
+        btnFichar.innerHTML = `
+            <span class="text-xl font-bold">${esSalida ? 'Fichar Salida' : 'Fichar Entrada'}</span>
+            <span class="text-sm font-medium opacity-90">${empleado.nombre}</span>
+        `;
+    }
+
+    function mostrarBotonProcesando() {
+        btnFichar.disabled = true;
+        btnFichar.className = 'w-full h-20 rounded-lg text-white transition flex flex-col items-center justify-center gap-1 bg-gray-400';
+        btnFichar.innerHTML = `
+            ${iconoReloj}
+            <span class="text-sm font-medium">Registrando...</span>
+        `;
     }
 
     async function cargarMiPanel() {
@@ -138,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const horaValor = inputHora.value;
         const fechaHoraCombinada = (fechaValor && horaValor) ? `${fechaValor}T${horaValor}` : '';
 
-        btnFichar.disabled = true;
+        mostrarBotonProcesando();
         try {
             const res = await fetch('/api/fichajes', {
                 method: 'POST',
