@@ -11,6 +11,7 @@ import { Resend } from 'resend';
 import * as XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
 import AdmZip from 'adm-zip';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
@@ -294,6 +295,69 @@ app.get('/api/me', (req, res) => {
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- Envío de email a la Gestoría (checkbox en Alta de Empleado) ---
+
+// --- Cloudflare R2 (almacenamiento de archivos: fotos DNI, comprobantes, facturas) ---
+let r2Client = null;
+
+function getR2Client() {
+  if (r2Client) return r2Client;
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env;
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    throw new Error('Faltan las variables de entorno de R2 (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)');
+  }
+  r2Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY
+    }
+  });
+  return r2Client;
+}
+
+// Sube un archivo a R2 y devuelve la "key" (ruta) con la que se guarda, para meter en la BD.
+async function subirArchivoR2(carpeta, nombreOriginal, buffer, mimetype) {
+  const client = getR2Client();
+  const bucket = process.env.R2_BUCKET_NAME;
+  if (!bucket) throw new Error('Falta la variable de entorno R2_BUCKET_NAME');
+
+  const extension = (nombreOriginal.split('.').pop() || 'bin').toLowerCase();
+  const key = `${carpeta}/${crypto.randomUUID()}.${extension}`;
+
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: buffer,
+    ContentType: mimetype
+  }));
+
+  return key;
+}
+
+// Descarga un archivo de R2 como Buffer, para servirlo igual que antes con res.send()
+async function leerArchivoR2(key) {
+  const client = getR2Client();
+  const bucket = process.env.R2_BUCKET_NAME;
+  const resultado = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const chunks = [];
+  for await (const chunk of resultado.Body) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function eliminarArchivoR2(key) {
+  if (!key) return;
+  try {
+    const client = getR2Client();
+    const bucket = process.env.R2_BUCKET_NAME;
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    console.error('Error al eliminar archivo de R2:', err.message);
+  }
+}
+
 
 let resendClient = null;
 
@@ -948,14 +1012,16 @@ app.get('/api/personal/:id/foto-dni', requirePermiso('empleados'), async (req, r
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      'SELECT foto_dni_data, foto_dni_mime, foto_dni_nombre_original FROM empleados WHERE id = $1',
+      'SELECT foto_dni_data, foto_dni_mime, foto_dni_nombre_original, foto_dni_r2_key FROM empleados WHERE id = $1',
       [id]
     );
-    if (!rows[0] || !rows[0].foto_dni_data) {
+    if (!rows[0] || (!rows[0].foto_dni_data && !rows[0].foto_dni_r2_key)) {
       return res.status(404).send('No hay foto de DNI para este empleado');
     }
 
-    const { foto_dni_data, foto_dni_mime, foto_dni_nombre_original } = rows[0];
+    const { foto_dni_data, foto_dni_mime, foto_dni_nombre_original, foto_dni_r2_key } = rows[0];
+    const datosArchivo = foto_dni_r2_key ? await leerArchivoR2(foto_dni_r2_key) : foto_dni_data;
+
     res.set('Content-Type', foto_dni_mime || 'application/octet-stream');
 
     if (req.query.download) {
@@ -963,7 +1029,7 @@ app.get('/api/personal/:id/foto-dni', requirePermiso('empleados'), async (req, r
       res.set('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
     }
 
-    res.send(foto_dni_data);
+    res.send(datosArchivo);
   } catch (err) {
     console.error('Error GET /api/personal/:id/foto-dni:', err.message);
     res.status(500).json({ error: err.message });
@@ -1188,11 +1254,15 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
     return res.status(400).json({ error: 'El email es obligatorio para dar acceso al sistema' });
   }
 
-  const fotoDniData = req.file ? req.file.buffer : null;
   const fotoDniMime = req.file ? req.file.mimetype : null;
   const fotoDniNombreOriginal = req.file ? req.file.originalname : null;
+  let fotoDniR2Key = null;
 
   try {
+    if (req.file) {
+      fotoDniR2Key = await subirArchivoR2('empleados/foto-dni', req.file.originalname, req.file.buffer, req.file.mimetype);
+    }
+
     let usuarioId = null;
     try {
       usuarioId = await gestionarAccesoEmpleado({
@@ -1213,9 +1283,9 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
       `INSERT INTO empleados
         (usuario_id, nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento,
          iban, domicilio, fecha_in, fecha_out, horas_alta, punto_venta_id,
-         email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, estado, registrado_por)
+         email, foto_dni_data, foto_dni_mime, foto_dni_nombre_original, foto_dni_r2_key, estado, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::boolean, TRUE), $18)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, COALESCE($18::boolean, TRUE), $19)
        RETURNING id, nombre, dni, punto_venta_id, fecha_in, fecha_out, estado`,
       [
         usuarioId,
@@ -1231,9 +1301,10 @@ app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'),
         horas_alta || null,
         punto_venta_id || null,
         email || null,
-        fotoDniData,
+        null,
         fotoDniMime,
         fotoDniNombreOriginal,
+        fotoDniR2Key,
         estado,
         req.session.usuario.id
       ]
@@ -1360,15 +1431,16 @@ app.put('/api/personal/:id', requirePermiso('empleados'), upload.single('fotoDni
 
     let rows;
     if (req.file) {
+      const nuevaR2Key = await subirArchivoR2('empleados/foto-dni', req.file.originalname, req.file.buffer, req.file.mimetype);
       ({ rows } = await pool.query(
         `UPDATE empleados SET
            usuario_id=$1, nombre=$2, dni=$3, numero_seguridad_social=$4, nacionalidad=$5,
            fecha_nacimiento=$6, iban=$7, domicilio=$8, fecha_in=$9, fecha_out=$10,
            horas_alta=$11, punto_venta_id=$12, email=$13, estado=COALESCE($14::boolean, estado),
-           foto_dni_data=$15, foto_dni_mime=$16, foto_dni_nombre_original=$17
+           foto_dni_data=NULL, foto_dni_mime=$15, foto_dni_nombre_original=$16, foto_dni_r2_key=$17
          WHERE id=$18
          RETURNING id`,
-        [...camposBase, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+        [...camposBase, req.file.mimetype, req.file.originalname, nuevaR2Key, id]
       ));
     } else {
       ({ rows } = await pool.query(
@@ -1695,18 +1767,20 @@ app.get('/api/ingresos/:id/comprobante', requirePermiso('ingresos'), async (req,
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      'SELECT comprobante_data, comprobante_mime, comprobante_nombre_original FROM ingresos WHERE id = $1',
+      'SELECT comprobante_data, comprobante_mime, comprobante_nombre_original, comprobante_r2_key FROM ingresos WHERE id = $1',
       [id]
     );
-    if (!rows[0] || !rows[0].comprobante_data) {
+    if (!rows[0] || (!rows[0].comprobante_data && !rows[0].comprobante_r2_key)) {
       return res.status(404).send('No hay comprobante para este ingreso');
     }
-    const { comprobante_data, comprobante_mime, comprobante_nombre_original } = rows[0];
+    const { comprobante_data, comprobante_mime, comprobante_nombre_original, comprobante_r2_key } = rows[0];
+    const datosArchivo = comprobante_r2_key ? await leerArchivoR2(comprobante_r2_key) : comprobante_data;
+
     res.set('Content-Type', comprobante_mime || 'application/octet-stream');
     if (req.query.download) {
       res.set('Content-Disposition', `attachment; filename="${comprobante_nombre_original || `comprobante-${id}`}"`);
     }
-    res.send(comprobante_data);
+    res.send(datosArchivo);
   } catch (err) {
     console.error('Error GET /api/ingresos/:id/comprobante:', err.message);
     res.status(500).json({ error: err.message });
@@ -1876,13 +1950,14 @@ app.post('/api/ingresos', requirePermiso('ingresos'), upload.single('comprobante
   }
 
   try {
+    const r2Key = await subirArchivoR2('ingresos/comprobante', req.file.originalname, req.file.buffer, req.file.mimetype);
     const { rows } = await pool.query(
       `INSERT INTO ingresos
-        (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original, registrado_por)
+        (fecha, importe, punto_venta_id, comprobante_data, comprobante_mime, comprobante_nombre_original, comprobante_r2_key, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7)
+        ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, fecha, importe, punto_venta_id, comprobante_nombre_original`,
-      [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+      [fecha, importe, punto_venta_id, null, req.file.mimetype, req.file.originalname, r2Key, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -1902,13 +1977,14 @@ app.put('/api/ingresos/:id', requirePermiso('ingresos'), upload.single('comproba
   try {
     let rows;
     if (req.file) {
+      const r2Key = await subirArchivoR2('ingresos/comprobante', req.file.originalname, req.file.buffer, req.file.mimetype);
       ({ rows } = await pool.query(
         `UPDATE ingresos SET
            fecha=$1, importe=$2, punto_venta_id=$3,
-           comprobante_data=$4, comprobante_mime=$5, comprobante_nombre_original=$6
+           comprobante_data=NULL, comprobante_mime=$4, comprobante_nombre_original=$5, comprobante_r2_key=$6
          WHERE id=$7
          RETURNING id`,
-        [fecha, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+        [fecha, importe, punto_venta_id, req.file.mimetype, req.file.originalname, r2Key, id]
       ));
     } else {
       ({ rows } = await pool.query(
@@ -1977,18 +2053,20 @@ app.get('/api/gastos-tarjeta/:id/factura', requirePermiso('gastos_tarjeta'), asy
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      'SELECT factura_data, factura_mime, factura_nombre_original FROM gastos_tarjeta WHERE id = $1',
+      'SELECT factura_data, factura_mime, factura_nombre_original, factura_r2_key FROM gastos_tarjeta WHERE id = $1',
       [id]
     );
-    if (!rows[0] || !rows[0].factura_data) {
+    if (!rows[0] || (!rows[0].factura_data && !rows[0].factura_r2_key)) {
       return res.status(404).send('No hay factura para este gasto');
     }
-    const { factura_data, factura_mime, factura_nombre_original } = rows[0];
+    const { factura_data, factura_mime, factura_nombre_original, factura_r2_key } = rows[0];
+    const datosArchivo = factura_r2_key ? await leerArchivoR2(factura_r2_key) : factura_data;
+
     res.set('Content-Type', factura_mime || 'application/octet-stream');
     if (req.query.download) {
       res.set('Content-Disposition', `attachment; filename="${factura_nombre_original || `factura-${id}`}"`);
     }
-    res.send(factura_data);
+    res.send(datosArchivo);
   } catch (err) {
     console.error('Error GET /api/gastos-tarjeta/:id/factura:', err.message);
     res.status(500).json({ error: err.message });
@@ -2003,13 +2081,14 @@ app.post('/api/gastos-tarjeta', requirePermiso('gastos_tarjeta'), upload.single(
   }
 
   try {
+    const r2Key = await subirArchivoR2('gastos-tarjeta/factura', req.file.originalname, req.file.buffer, req.file.mimetype);
     const { rows } = await pool.query(
       `INSERT INTO gastos_tarjeta
-        (fecha, proveedor_id, importe, punto_venta_id, factura_data, factura_mime, factura_nombre_original, registrado_por)
+        (fecha, proveedor_id, importe, punto_venta_id, factura_data, factura_mime, factura_nombre_original, factura_r2_key, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, fecha, proveedor_id, importe, punto_venta_id, factura_nombre_original`,
-      [fecha, proveedor_id, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+      [fecha, proveedor_id, importe, punto_venta_id, null, req.file.mimetype, req.file.originalname, r2Key, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -2029,13 +2108,14 @@ app.put('/api/gastos-tarjeta/:id', requirePermiso('gastos_tarjeta'), upload.sing
   try {
     let rows;
     if (req.file) {
+      const r2Key = await subirArchivoR2('gastos-tarjeta/factura', req.file.originalname, req.file.buffer, req.file.mimetype);
       ({ rows } = await pool.query(
         `UPDATE gastos_tarjeta SET
            fecha=$1, proveedor_id=$2, importe=$3, punto_venta_id=$4,
-           factura_data=$5, factura_mime=$6, factura_nombre_original=$7
+           factura_data=NULL, factura_mime=$5, factura_nombre_original=$6, factura_r2_key=$7
          WHERE id=$8
          RETURNING id`,
-        [fecha, proveedor_id, importe, punto_venta_id, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+        [fecha, proveedor_id, importe, punto_venta_id, req.file.mimetype, req.file.originalname, r2Key, id]
       ));
     } else {
       ({ rows } = await pool.query(
@@ -2296,18 +2376,20 @@ app.get('/api/factura-cash/:id/factura', requirePermiso('factura_cash'), async (
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
-      'SELECT factura_data, factura_mime, factura_nombre_original FROM factura_cash WHERE id = $1',
+      'SELECT factura_data, factura_mime, factura_nombre_original, factura_r2_key FROM factura_cash WHERE id = $1',
       [id]
     );
-    if (!rows[0] || !rows[0].factura_data) {
+    if (!rows[0] || (!rows[0].factura_data && !rows[0].factura_r2_key)) {
       return res.status(404).send('No hay factura para este registro');
     }
-    const { factura_data, factura_mime, factura_nombre_original } = rows[0];
+    const { factura_data, factura_mime, factura_nombre_original, factura_r2_key } = rows[0];
+    const datosArchivo = factura_r2_key ? await leerArchivoR2(factura_r2_key) : factura_data;
+
     res.set('Content-Type', factura_mime || 'application/octet-stream');
     if (req.query.download) {
       res.set('Content-Disposition', `attachment; filename="${factura_nombre_original || `factura-${id}`}"`);
     }
-    res.send(factura_data);
+    res.send(datosArchivo);
   } catch (err) {
     console.error('Error GET /api/factura-cash/:id/factura:', err.message);
     res.status(500).json({ error: err.message });
@@ -2322,13 +2404,14 @@ app.post('/api/factura-cash', requirePermiso('factura_cash'), upload.single('fac
   }
 
   try {
+    const r2Key = await subirArchivoR2('factura-cash/factura', req.file.originalname, req.file.buffer, req.file.mimetype);
     const { rows } = await pool.query(
       `INSERT INTO factura_cash
-        (fecha, proveedor_nombre, punto_venta_id, importe, observaciones, factura_data, factura_mime, factura_nombre_original, registrado_por)
+        (fecha, proveedor_nombre, punto_venta_id, importe, observaciones, factura_data, factura_mime, factura_nombre_original, factura_r2_key, registrado_por)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, fecha, proveedor_nombre, punto_venta_id, importe, observaciones, factura_nombre_original`,
-      [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, req.session.usuario.id]
+      [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, null, req.file.mimetype, req.file.originalname, r2Key, req.session.usuario.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -2348,13 +2431,14 @@ app.put('/api/factura-cash/:id', requirePermiso('factura_cash'), upload.single('
   try {
     let rows;
     if (req.file) {
+      const r2Key = await subirArchivoR2('factura-cash/factura', req.file.originalname, req.file.buffer, req.file.mimetype);
       ({ rows } = await pool.query(
         `UPDATE factura_cash SET
            fecha=$1, proveedor_nombre=$2, punto_venta_id=$3, importe=$4, observaciones=$5,
-           factura_data=$6, factura_mime=$7, factura_nombre_original=$8
+           factura_data=NULL, factura_mime=$6, factura_nombre_original=$7, factura_r2_key=$8
          WHERE id=$9
          RETURNING id`,
-        [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, req.file.buffer, req.file.mimetype, req.file.originalname, id]
+        [fecha, proveedor_nombre, punto_venta_id, importe, observaciones || null, req.file.mimetype, req.file.originalname, r2Key, id]
       ));
     } else {
       ({ rows } = await pool.query(
