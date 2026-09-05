@@ -650,6 +650,29 @@ function obtenerValorPorClave(filaNormalizada, nombreBuscado) {
   return (valor === undefined || valor === null) ? '' : valor;
 }
 
+// La columna de "ruta del archivo" en los Excel de AppSheet a veces no tiene un
+// encabezado real (queda en blanco), así que buscamos primero por nombre y,
+// si no aparece nada con pinta de ruta, caemos a detectarla por su contenido
+// (cualquier columna cuyo valor tenga "/" y termine en una extensión de archivo).
+function obtenerValorRutaArchivo(filaNormalizada) {
+  const candidatos = ['_', 'RUTA', 'ARCHIVO', 'PATH'];
+  for (const clave of candidatos) {
+    const valor = obtenerValorPorClave(filaNormalizada, clave);
+    if (valor && /\.(pdf|jpe?g|png)$/i.test(String(valor).trim())) {
+      return valor;
+    }
+  }
+  // Fallback: recorre todas las columnas de la fila y usa la primera que
+  // parezca una ruta de archivo (contiene "/" y termina en una extensión conocida)
+  for (const clave of Object.keys(filaNormalizada)) {
+    const valor = filaNormalizada[clave];
+    if (valor && String(valor).includes('/') && /\.(pdf|jpe?g|png)$/i.test(String(valor).trim())) {
+      return valor;
+    }
+  }
+  return '';
+}
+
 function parsearImporteExcel(valor) {
   if (valor === undefined || valor === '' || valor === null) return 0;
   const n = parseFloat(String(valor).replace(',', '.'));
@@ -1882,7 +1905,7 @@ app.post(
         const fechaValor = obtenerValorPorClave(fila, 'FECHA');
         const importeValor = obtenerValorPorClave(fila, 'IMPORTE');
         const nombrePuntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
-        const rutaArchivo = obtenerValorPorClave(fila, '_');
+        const rutaArchivo = obtenerValorRutaArchivo(fila);
         const usuario = obtenerValorPorClave(fila, 'USUARIO');
 
         const fecha = parsearFechaSoloExcel(fechaValor);
@@ -2156,7 +2179,7 @@ app.post(
         const importeValor = obtenerValorPorClave(fila, 'IMPORTE');
         const nombreProveedor = obtenerValorPorClave(fila, 'PROVEEDOR');
         const nombrePuntoVenta = obtenerValorPorClave(fila, 'CENTRO DE COSTE');
-        const rutaArchivo = obtenerValorPorClave(fila, '_');
+        const rutaArchivo = obtenerValorRutaArchivo(fila);
         const usuario = obtenerValorPorClave(fila, 'USUARIO');
 
         const fecha = parsearFechaSoloExcel(fechaValor);
