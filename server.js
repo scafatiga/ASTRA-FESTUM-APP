@@ -625,7 +625,7 @@ app.get('/api/cierres', requirePermiso('historico'), async (req, res) => {
       `SELECT c.*, u.nombre AS registrado_por_nombre
        FROM cierres c
        LEFT JOIN usuarios u ON u.id = c.registrado_por
-       ORDER BY c.id DESC`
+       ORDER BY c.fecha DESC`
     );
     res.json(rows);
   } catch (err) {
