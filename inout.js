@@ -1,12 +1,21 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const puntosVentaBotones = document.getElementById('puntosVentaBotones');
-    const bloqueEmpleados = document.getElementById('bloqueEmpleados');
-    const empleadosBotones = document.getElementById('empleadosBotones');
+    const btnFichar = document.getElementById('btnFichar');
+    const selectPuntoVenta = document.getElementById('puntoVenta');
+    const inputFechaHora = document.getElementById('fechaHora');
+    const bloqueFicharPor = document.getElementById('bloqueFicharPor');
+    const selectFicharPor = document.getElementById('ficharPor');
     const tabla = document.getElementById('tablaFichajes');
 
     let puntosVentaCache = [];
-    let puntoVentaSeleccionado = null;
-    let empleadosDetalleCache = {}; // id -> nombre, para el listado
+    let empleadosCache = []; // solo si puede fichar por terceros
+    let miPanel = null; // { yo, puede_terceros, empleados }
+    let empleadoSeleccionadoId = null; // null = yo mismo
+
+    function ahoraParaInput() {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
 
     function formatearFecha(f) {
         if (!f) return '-';
@@ -26,8 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!entrada || !salida) return '-';
         const ms = new Date(salida) - new Date(entrada);
         if (isNaN(ms) || ms < 0) return '-';
-        const horas = ms / (1000 * 60 * 60);
-        return horas.toFixed(2) + ' h';
+        return (ms / (1000 * 60 * 60)).toFixed(2) + ' h';
     }
 
     function nombrePuntoVenta(id) {
@@ -35,97 +43,107 @@ document.addEventListener('DOMContentLoaded', async () => {
         return pv ? pv.nombre : '-';
     }
 
-    // --- Paso 1: botones de Puntos de Venta ---
-    async function cargarPuntosVentaBotones() {
+    // --- Carga inicial: puntos de venta + mi panel ---
+    async function cargarPuntosVenta() {
         try {
-            const res = await fetch('/api/fichajes/puntos-venta');
+            const res = await fetch('/api/puntos-venta');
             if (!res.ok) throw new Error('Error al cargar puntos de venta');
             puntosVentaCache = await res.json();
-
-            if (puntosVentaCache.length === 0) {
-                puntosVentaBotones.innerHTML = '<div class="col-span-full text-center text-gray-400 text-sm py-4">No hay puntos de venta activos.</div>';
-                return;
-            }
-
-            puntosVentaBotones.innerHTML = puntosVentaCache.map(pv => `
-                <button type="button" class="pv-btn h-14 flex items-center justify-center text-center px-2 rounded-lg text-sm font-medium border bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200 transition" data-id="${pv.id}">
-                    ${pv.nombre}
-                </button>
-            `).join('');
-
-            document.querySelectorAll('.pv-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.pv-btn').forEach(b => {
-                        b.className = 'pv-btn h-14 flex items-center justify-center text-center px-2 rounded-lg text-sm font-medium border bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200 transition';
-                    });
-                    btn.className = 'pv-btn h-14 flex items-center justify-center text-center px-2 rounded-lg text-sm font-medium border bg-blue-600 border-blue-600 text-white transition';
-                    puntoVentaSeleccionado = btn.dataset.id;
-                    cargarPanelEmpleados(puntoVentaSeleccionado);
-                });
-            });
+            const opciones = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
+            selectPuntoVenta.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
+            document.getElementById('editPuntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
         } catch (err) {
             console.error(err);
-            puntosVentaBotones.innerHTML = '<div class="col-span-full text-center text-red-500 text-sm py-4">Error al cargar los puntos de venta.</div>';
         }
     }
 
-    // --- Paso 2: botones de Empleados de ese Punto de Venta ---
-    async function cargarPanelEmpleados(puntoVentaId) {
-        bloqueEmpleados.classList.remove('hidden');
-        empleadosBotones.innerHTML = '<div class="col-span-full text-center text-gray-400 text-sm py-4">Cargando...</div>';
+    function actualizarBoton() {
+        const empleado = empleadoSeleccionadoId
+            ? miPanel.empleados.find(e => e.id === empleadoSeleccionadoId)
+            : miPanel.yo;
 
+        if (!empleado) {
+            btnFichar.disabled = true;
+            btnFichar.className = 'w-full h-20 rounded-lg text-xl font-bold text-white transition bg-gray-300';
+            btnFichar.textContent = 'Selecciona un empleado';
+            return;
+        }
+
+        const esSalida = empleado.proxima_accion === 'SALIDA';
+        btnFichar.disabled = false;
+        btnFichar.className = `w-full h-20 rounded-lg text-xl font-bold text-white transition ${esSalida ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`;
+        btnFichar.textContent = esSalida ? 'Fichar Salida' : 'Fichar Entrada';
+    }
+
+    async function cargarMiPanel() {
         try {
-            const res = await fetch(`/api/fichajes/panel?punto_venta_id=${puntoVentaId}`);
-            if (!res.ok) throw new Error('Error al cargar empleados');
-            const empleados = await res.json();
+            const res = await fetch('/api/fichajes/mi-panel');
+            const datos = await res.json();
+            if (!res.ok) throw new Error(datos.error || 'Error al cargar tu panel de fichaje');
+            miPanel = datos;
 
-            if (empleados.length === 0) {
-                empleadosBotones.innerHTML = '<div class="col-span-full text-center text-gray-400 text-sm py-4">No hay empleados asignados a este Punto de Venta.</div>';
-                return;
+            selectPuntoVenta.value = miPanel.yo.punto_venta_id || '';
+
+            if (miPanel.puede_terceros && miPanel.empleados.length > 0) {
+                empleadosCache = miPanel.empleados;
+                const opciones = empleadosCache
+                    .filter(e => e.id !== miPanel.yo.empleado_id)
+                    .map(e => `<option value="${e.id}">${e.nombre}</option>`)
+                    .join('');
+                selectFicharPor.innerHTML = `<option value="">Yo mismo</option>${opciones}`;
+                bloqueFicharPor.classList.remove('hidden');
             }
 
-            empleadosBotones.innerHTML = empleados.map(e => {
-                const esSalida = e.proxima_accion === 'SALIDA';
-                const colorClase = !e.puede_ficharlo
-                    ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                    : esSalida
-                        ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white'
-                        : 'bg-emerald-500 hover:bg-emerald-600 border-emerald-500 text-white';
-                return `
-                    <button type="button" class="emp-btn h-20 flex flex-col items-center justify-center text-center px-2 gap-1 rounded-lg border transition ${colorClase}" data-id="${e.id}" data-accion="${e.proxima_accion}" ${!e.puede_ficharlo ? 'disabled' : ''}>
-                        <span class="text-xs font-medium opacity-90">${e.nombre}</span>
-                        <span class="text-base font-bold">${e.puede_ficharlo ? (esSalida ? 'Fichar Salida' : 'Fichar Entrada') : 'Sin permiso'}</span>
-                    </button>
-                `;
-            }).join('');
-
-            document.querySelectorAll('.emp-btn').forEach(btn => {
-                if (btn.disabled) return;
-                btn.addEventListener('click', () => registrarFichaje(btn.dataset.id));
-            });
+            actualizarBoton();
         } catch (err) {
             console.error(err);
-            empleadosBotones.innerHTML = '<div class="col-span-full text-center text-red-500 text-sm py-4">Error al cargar los empleados.</div>';
+            btnFichar.textContent = 'No se pudo cargar tu panel';
+            btnFichar.className = 'w-full h-20 rounded-lg text-xl font-bold text-white transition bg-gray-300';
         }
     }
 
-    async function registrarFichaje(empleadoId) {
+    selectFicharPor.addEventListener('change', () => {
+        empleadoSeleccionadoId = selectFicharPor.value || null;
+        const empleado = empleadoSeleccionadoId
+            ? empleadosCache.find(e => e.id === empleadoSeleccionadoId)
+            : miPanel.yo;
+        if (empleado) selectPuntoVenta.value = empleado.punto_venta_id || '';
+        actualizarBoton();
+    });
+
+    btnFichar.addEventListener('click', async () => {
+        const empleadoId = empleadoSeleccionadoId || miPanel.yo.empleado_id;
+        const puntoVentaId = selectPuntoVenta.value;
+        const fechaHora = inputFechaHora.value;
+
+        if (!puntoVentaId) {
+            alert('Selecciona un Punto de Venta.');
+            return;
+        }
+
+        btnFichar.disabled = true;
         try {
             const res = await fetch('/api/fichajes', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ empleado_id: empleadoId, punto_venta_id: puntoVentaSeleccionado })
+                body: JSON.stringify({
+                    empleado_id: empleadoId,
+                    punto_venta_id: puntoVentaId,
+                    hora: fechaHora ? new Date(fechaHora).toISOString() : undefined
+                })
             });
             const resultado = await res.json();
             if (!res.ok) throw new Error(resultado.error || 'Error al registrar el fichaje');
 
-            cargarPanelEmpleados(puntoVentaSeleccionado);
+            inputFechaHora.value = ahoraParaInput();
+            await cargarMiPanel();
             cargarFichajes();
         } catch (err) {
             console.error(err);
             alert(err.message || 'No se pudo registrar el fichaje.');
+            actualizarBoton();
         }
-    }
+    });
 
     // --- Colapsar / expandir la lista ---
     const btnToggleLista = document.getElementById('btnToggleLista');
@@ -139,6 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Buscador en tiempo real (empleado o punto de venta) ---
     let fichajesCache = [];
+    let empleadosDetalleCache = {};
     document.getElementById('buscadorFichajes').addEventListener('input', (e) => {
         renderizarTablaFichajes(filtrarFichajes(e.target.value));
     });
@@ -223,10 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    async function cargarSelectsEditar() {
-        const opcionesPV = puntosVentaCache.map(pv => `<option value="${pv.id}">${pv.nombre}</option>`).join('');
-        document.getElementById('editPuntoVenta').innerHTML = `<option value="">-- Selecciona --</option>${opcionesPV}`;
-
+    function cargarSelectEmpleadoEditar() {
         const empleadosOrdenados = Object.entries(empleadosDetalleCache).sort((a, b) => a[1].localeCompare(b[1]));
         const opcionesEmp = empleadosOrdenados.map(([id, nombre]) => `<option value="${id}">${nombre}</option>`).join('');
         document.getElementById('editEmpleado').innerHTML = `<option value="">-- Selecciona --</option>${opcionesEmp}`;
@@ -237,7 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const f = fichajesCache.find(x => String(x.id) === String(id));
             if (!f) throw new Error('Fichaje no encontrado');
 
-            await cargarSelectsEditar();
+            cargarSelectEmpleadoEditar();
 
             document.getElementById('editId').value = f.id;
             document.getElementById('editEmpleado').value = f.empleado_id || '';
@@ -285,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             document.getElementById('modalEditar').classList.add('hidden');
             cargarFichajes();
-            if (puntoVentaSeleccionado) cargarPanelEmpleados(puntoVentaSeleccionado);
+            cargarMiPanel();
         } catch (err) {
             console.error(err);
             alert(err.message || 'No se pudo guardar el fichaje.');
@@ -300,13 +316,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const resultado = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(resultado.error || 'Error al eliminar');
             cargarFichajes();
-            if (puntoVentaSeleccionado) cargarPanelEmpleados(puntoVentaSeleccionado);
+            cargarMiPanel();
         } catch (err) {
             console.error(err);
             alert(err.message || 'No se pudo eliminar el fichaje.');
         }
     }
 
-    await cargarPuntosVentaBotones();
+    inputFechaHora.value = ahoraParaInput();
+    await cargarPuntosVenta();
+    await cargarMiPanel();
     await cargarFichajes();
 });

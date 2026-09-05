@@ -2285,65 +2285,45 @@ function puedeFicharPorOtros(req) {
 }
 
 // Puntos de Venta activos (para los botones de arriba)
-app.get('/api/fichajes/puntos-venta', requirePermiso('inout'), async (req, res) => {
+// Panel de In-Out: quién soy, mi Punto de Venta por defecto, y (si tengo permiso)
+// la lista de todos los empleados activos para poder fichar por otro.
+app.get('/api/fichajes/mi-panel', requirePermiso('inout'), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT id, nombre, universal FROM puntos_venta WHERE activo = TRUE ORDER BY nombre ASC');
-    res.json(rows);
-  } catch (err) {
-    console.error('Error GET /api/fichajes/puntos-venta:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Empleados que se pueden fichar bajo un Punto de Venta: los suyos + los de cualquier PV "universal"
-app.get('/api/fichajes/panel', requirePermiso('inout'), async (req, res) => {
-  const { punto_venta_id } = req.query;
-  if (!punto_venta_id) return res.status(400).json({ error: 'Falta punto_venta_id' });
-
-  try {
-    const { rows: empleados } = await pool.query(
-      `SELECT e.id, e.nombre, e.usuario_id
-       FROM empleados e
-       WHERE e.estado = TRUE
-         AND (
-           e.punto_venta_id = $1
-           OR e.punto_venta_id IN (SELECT id FROM puntos_venta WHERE universal = TRUE)
-         )
-       ORDER BY e.nombre ASC`,
-      [punto_venta_id]
-    );
-
-    // Para cada empleado, mira si tiene un fichaje abierto (entrada sin salida)
-    const idsEmpleados = empleados.map(e => e.id);
-    let abiertos = [];
-    if (idsEmpleados.length > 0) {
-      const { rows } = await pool.query(
-        `SELECT DISTINCT ON (empleado_id) id, empleado_id, hora_entrada
-         FROM fichajes
-         WHERE empleado_id = ANY($1) AND hora_salida IS NULL
-         ORDER BY empleado_id, hora_entrada DESC`,
-        [idsEmpleados]
-      );
-      abiertos = rows;
+    const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+    if (!miEmpleadoId) {
+      return res.status(400).json({ error: 'Tu usuario no tiene una ficha de Empleado asociada. Pide a un administrador que la vincule.' });
     }
 
+    async function estadoDe(empleadoId) {
+      const { rows } = await pool.query(
+        'SELECT id FROM fichajes WHERE empleado_id = $1 AND hora_salida IS NULL ORDER BY hora_entrada DESC LIMIT 1',
+        [empleadoId]
+      );
+      return rows[0] ? 'SALIDA' : 'ENTRADA';
+    }
+
+    const { rows: miFichaRows } = await pool.query('SELECT id, nombre, punto_venta_id FROM empleados WHERE id = $1', [miEmpleadoId]);
+    const miFicha = miFichaRows[0];
+
+    const yo = {
+      empleado_id: miFicha.id,
+      nombre: miFicha.nombre,
+      punto_venta_id: miFicha.punto_venta_id,
+      proxima_accion: await estadoDe(miFicha.id)
+    };
+
     const puedeTerceros = puedeFicharPorOtros(req);
-    const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
+    let empleados = [];
+    if (puedeTerceros) {
+      const { rows } = await pool.query('SELECT id, nombre, punto_venta_id FROM empleados WHERE estado = TRUE ORDER BY nombre ASC');
+      for (const e of rows) {
+        empleados.push({ ...e, proxima_accion: await estadoDe(e.id) });
+      }
+    }
 
-    const resultado = empleados.map(e => {
-      const abierto = abiertos.find(a => a.empleado_id === e.id);
-      return {
-        id: e.id,
-        nombre: e.nombre,
-        proxima_accion: abierto ? 'SALIDA' : 'ENTRADA',
-        fichaje_abierto_id: abierto ? abierto.id : null,
-        puede_ficharlo: puedeTerceros || e.id === miEmpleadoId
-      };
-    });
-
-    res.json(resultado);
+    res.json({ yo, puede_terceros: puedeTerceros, empleados });
   } catch (err) {
-    console.error('Error GET /api/fichajes/panel:', err.message);
+    console.error('Error GET /api/fichajes/mi-panel:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

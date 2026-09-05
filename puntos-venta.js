@@ -108,7 +108,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ['Nombre', pv.nombre],
             ['Dirección', pv.direccion],
             ['Tipo Stand', pv.tipo_stand],
-            ['Universal', pv.universal ? 'Sí' : 'No'],
             ['Estado', pv.activo ? 'Activo' : 'Inactivo'],
             ['Registrado por', pv.registrado_por_nombre
                 ? `${pv.registrado_por_nombre} — ${formatearFechaHora(pv.creado_en)}`
@@ -139,7 +138,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editNombre').value = pv.nombre || '';
         document.getElementById('editDireccion').value = pv.direccion || '';
         document.getElementById('editTipoStand').value = pv.tipo_stand || '';
-        document.getElementById('editUniversal').checked = !!pv.universal;
 
         document.getElementById('modalEditar').classList.remove('hidden');
     }
@@ -159,8 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const datos = {
             nombre: document.getElementById('editNombre').value.trim(),
             direccion: document.getElementById('editDireccion').value.trim(),
-            tipo_stand: document.getElementById('editTipoStand').value.trim(),
-            universal: document.getElementById('editUniversal').checked
+            tipo_stand: document.getElementById('editTipoStand').value.trim()
         };
 
         try {
@@ -201,7 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const nombre = document.getElementById('nombre').value.trim();
             const direccion = document.getElementById('direccion').value.trim();
             const tipoStand = document.getElementById('tipoStand').value.trim();
-            const universal = document.getElementById('universal').checked;
 
             if (!nombre) return;
 
@@ -209,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/puntos-venta', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nombre, direccion, tipo_stand: tipoStand, universal })
+                    body: JSON.stringify({ nombre, direccion, tipo_stand: tipoStand })
                 });
                 if (!res.ok) throw new Error('Error al crear punto de venta');
 
