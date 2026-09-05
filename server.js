@@ -412,6 +412,72 @@ app.get('/api/puntos-venta/todos', requirePermiso('puntos_venta'), async (req, r
   }
 });
 
+// --- Importar Puntos de Venta desde Excel (formato AppSheet) ---
+// Evita duplicados: si ya existe un Punto de Venta con el mismo nombre, lo actualiza en vez de crear otro.
+function interpretarActivo(valor) {
+  const texto = String(valor || '').trim().toUpperCase();
+  if (['NO', 'INACTIVO', 'FALSE', '0'].includes(texto)) return false;
+  return true; // por defecto activo (incluye "ACTIVO", "SI", "SÍ", vacío, etc.)
+}
+
+app.post('/api/puntos-venta/importar-excel', requirePermiso('puntos_venta'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    let creados = 0;
+    let actualizados = 0;
+    let omitidos = 0;
+
+    for (const filaOriginal of filas) {
+      const fila = normalizarFilaExcel(filaOriginal);
+
+      const nombre = String(obtenerValorPorClave(fila, 'PUNTO DE VENTA')).trim();
+      if (!nombre) {
+        omitidos++;
+        continue;
+      }
+
+      const direccion = String(obtenerValorPorClave(fila, 'DIRECCION')).trim() || null;
+      const tipoStand = String(obtenerValorPorClave(fila, 'TIPO_STAND')).trim() || null;
+      const activo = interpretarActivo(obtenerValorPorClave(fila, 'ESTADO'));
+
+      const existente = await pool.query(
+        'SELECT id FROM puntos_venta WHERE LOWER(TRIM(nombre)) = LOWER($1)',
+        [nombre]
+      );
+
+      if (existente.rows[0]) {
+        await pool.query(
+          'UPDATE puntos_venta SET direccion=$1, tipo_stand=$2, activo=$3 WHERE id=$4',
+          [direccion, tipoStand, activo, existente.rows[0].id]
+        );
+        actualizados++;
+      } else {
+        await pool.query(
+          'INSERT INTO puntos_venta (nombre, direccion, tipo_stand, activo, registrado_por) VALUES ($1, $2, $3, $4, $5)',
+          [nombre, direccion, tipoStand, activo, req.session.usuario.id]
+        );
+        creados++;
+      }
+    }
+
+    res.json({ ok: true, total: filas.length, creados, actualizados, omitidos });
+  } catch (err) {
+    console.error('Error POST /api/puntos-venta/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
 app.post('/api/puntos-venta', requirePermiso('puntos_venta'), async (req, res) => {
   const { nombre, direccion, tipo_stand, universal } = req.body;
   try {
@@ -497,6 +563,181 @@ app.get('/api/cierres', requirePermiso('historico'), async (req, res) => {
   } catch (err) {
     console.error('Error GET /api/cierres:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Importar Histórico de Cierres desde Excel (formato AppSheet) ---
+
+function normalizarClave(str) {
+  return String(str || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function normalizarFilaExcel(fila) {
+  const normalizada = {};
+  for (const clave of Object.keys(fila)) {
+    normalizada[normalizarClave(clave)] = fila[clave];
+  }
+  return normalizada;
+}
+
+function obtenerValorPorClave(filaNormalizada, nombreBuscado) {
+  const valor = filaNormalizada[normalizarClave(nombreBuscado)];
+  return (valor === undefined || valor === null) ? '' : valor;
+}
+
+function parsearImporteExcel(valor) {
+  if (valor === undefined || valor === '' || valor === null) return 0;
+  const n = parseFloat(String(valor).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
+
+function combinarFechaHoraExcel(fechaValor, horaValor) {
+  let fecha = null;
+
+  if (fechaValor instanceof Date) {
+    fecha = fechaValor;
+  } else if (typeof fechaValor === 'string' && fechaValor.trim()) {
+    const m = fechaValor.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) {
+      let [, d, mo, y] = m;
+      if (y.length === 2) y = '20' + y;
+      fecha = new Date(Number(y), Number(mo) - 1, Number(d));
+    }
+  } else if (typeof fechaValor === 'number') {
+    // número de serie de Excel (días desde 1899-12-30)
+    fecha = new Date(Math.round((fechaValor - 25569) * 86400 * 1000));
+  }
+
+  if (!fecha || isNaN(fecha.getTime())) return null;
+
+  let horas = 0, minutos = 0, segundos = 0;
+  if (horaValor instanceof Date) {
+    horas = horaValor.getHours();
+    minutos = horaValor.getMinutes();
+    segundos = horaValor.getSeconds();
+  } else if (typeof horaValor === 'string' && horaValor.trim()) {
+    const m = horaValor.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (m) {
+      horas = Number(m[1]);
+      minutos = Number(m[2]);
+      segundos = Number(m[3] || 0);
+    }
+  } else if (typeof horaValor === 'number') {
+    const totalSegundos = Math.round(horaValor * 24 * 60 * 60);
+    horas = Math.floor(totalSegundos / 3600);
+    minutos = Math.floor((totalSegundos % 3600) / 60);
+    segundos = totalSegundos % 60;
+  }
+
+  return new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), horas, minutos, segundos);
+}
+
+app.post('/api/cierres/importar-excel', requirePermiso('cierre'), upload.single('archivo'), async (req, res) => {
+  if (!req.session.usuario.es_admin) {
+    return res.status(403).json({ error: 'Solo un administrador puede importar el histórico de cierres' });
+  }
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
+    function buscarUsuarioId(nombreOEmail) {
+      if (!nombreOEmail) return null;
+      const texto = String(nombreOEmail).trim().toLowerCase();
+      const encontrado = usuariosDb.find(u =>
+        (u.nombre || '').trim().toLowerCase() === texto ||
+        (u.email || '').trim().toLowerCase() === texto
+      );
+      return encontrado ? encontrado.id : null;
+    }
+
+    let creados = 0;
+    let omitidos = 0;
+    const erroresFilas = [];
+
+    for (let i = 0; i < filas.length; i++) {
+      const fila = normalizarFilaExcel(filas[i]);
+
+      const puntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
+      const fechaValor = obtenerValorPorClave(fila, 'FECHA');
+      const horaValor = obtenerValorPorClave(fila, 'HORA');
+
+      if (!puntoVenta || !fechaValor) {
+        omitidos++;
+        continue;
+      }
+
+      const fechaCompleta = combinarFechaHoraExcel(fechaValor, horaValor) || new Date();
+
+      const totalTarjeta = parsearImporteExcel(obtenerValorPorClave(fila, 'VENTA TARJETA'));
+      const totalEfectivo = parsearImporteExcel(obtenerValorPorClave(fila, 'VENTA EFECTIVO'));
+
+      const gastos = [];
+      for (let g = 1; g <= 5; g++) {
+        const descripcion = obtenerValorPorClave(fila, `CENTRO DE COSTO ${g}`);
+        const importe = parsearImporteExcel(obtenerValorPorClave(fila, `IMPORTE GASTO ${g}`));
+        if (descripcion && importe > 0) {
+          gastos.push({ descripcion: String(descripcion).trim(), importe, punto_venta: String(puntoVenta).trim() });
+        }
+      }
+
+      const adelantos = [];
+      for (let p = 1; p <= 4; p++) {
+        const empleado = obtenerValorPorClave(fila, `PAGO ${p}: EMPLEADO`);
+        const importe = parsearImporteExcel(obtenerValorPorClave(fila, `PAGO ${p}: IMPORTE`));
+        const pvPago = obtenerValorPorClave(fila, `PUNTO DE VENTA PAGO ${p}`) || puntoVenta;
+        if (empleado && importe > 0) {
+          adelantos.push({ empleado: String(empleado).trim(), importe, punto_venta: String(pvPago).trim() });
+        }
+      }
+
+      const obsGastos = obtenerValorPorClave(fila, 'OBSERVACIONES GASTOS');
+      const obsPagos = obtenerValorPorClave(fila, 'OBSERVACIONES PAGOS EMPLEADOS');
+      const observaciones = [obsGastos, obsPagos].filter(Boolean).map(String).join(' | ');
+
+      const usuarioId = buscarUsuarioId(obtenerValorPorClave(fila, 'USUARIO'));
+
+      try {
+        await pool.query(
+          `INSERT INTO cierres (fecha, punto_venta, total_efectivo, total_tarjeta, observaciones, gastos, adelantos, registrado_por)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+          [
+            fechaCompleta.toISOString(),
+            String(puntoVenta).trim(),
+            totalEfectivo,
+            totalTarjeta,
+            observaciones,
+            JSON.stringify(gastos),
+            JSON.stringify(adelantos),
+            usuarioId
+          ]
+        );
+        creados++;
+      } catch (errFila) {
+        erroresFilas.push({ fila: i + 2, error: errFila.message });
+      }
+    }
+
+    res.json({
+      ok: true,
+      total: filas.length,
+      creados,
+      omitidos,
+      errores: erroresFilas.length,
+      detalleErrores: erroresFilas.slice(0, 10)
+    });
+  } catch (err) {
+    console.error('Error POST /api/cierres/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
   }
 });
 

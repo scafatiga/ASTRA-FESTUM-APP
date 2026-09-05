@@ -218,5 +218,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Importar catálogo desde Excel ---
+    const inputExcel = document.getElementById('inputExcel');
+    const btnImportarExcel = document.getElementById('btnImportarExcel');
+    const resultadoImportacion = document.getElementById('resultadoImportacion');
+
+    btnImportarExcel.addEventListener('click', () => inputExcel.click());
+
+    inputExcel.addEventListener('change', async () => {
+        const archivo = inputExcel.files[0];
+        if (!archivo) return;
+
+        btnImportarExcel.disabled = true;
+        btnImportarExcel.textContent = 'Subiendo...';
+        resultadoImportacion.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('archivo', archivo);
+
+        try {
+            const res = await fetch('/api/puntos-venta/importar-excel', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar el archivo');
+
+            resultadoImportacion.textContent = `Importación completada: ${resultado.creados} nuevo(s), ${resultado.actualizados} actualizado(s), ${resultado.omitidos} omitido(s) (sin nombre), de ${resultado.total} filas leídas.`;
+            resultadoImportacion.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacion.classList.remove('hidden');
+
+            cargarPuntosVenta();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacion.textContent = err.message || 'No se pudo importar el archivo.';
+            resultadoImportacion.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacion.classList.remove('hidden');
+        } finally {
+            btnImportarExcel.disabled = false;
+            btnImportarExcel.textContent = '📄 Subir Excel';
+            inputExcel.value = '';
+        }
+    });
+
     cargarPuntosVenta();
 });
