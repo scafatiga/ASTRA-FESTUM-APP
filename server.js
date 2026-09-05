@@ -682,6 +682,32 @@ function parsearImporteExcel(valor) {
   return isNaN(n) ? 0 : n;
 }
 
+// Convierte una fecha/hora "de pared" de España (Madrid) al instante UTC correcto,
+// respetando el cambio de horario verano/invierno automáticamente (sin librerías externas).
+function convertirMadridAUtc(anio, mesIndice, dia, horas, minutos, segundos) {
+  const supuestoUtc = new Date(Date.UTC(anio, mesIndice, dia, horas, minutos, segundos));
+  const formateador = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Madrid',
+    hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const partes = formateador.formatToParts(supuestoUtc).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const horaComoSiFueraMadrid = Date.UTC(
+    Number(partes.year),
+    Number(partes.month) - 1,
+    Number(partes.day),
+    partes.hour === '24' ? 0 : Number(partes.hour),
+    Number(partes.minute),
+    Number(partes.second)
+  );
+  const desfaseMs = horaComoSiFueraMadrid - supuestoUtc.getTime();
+  return new Date(supuestoUtc.getTime() - desfaseMs);
+}
+
 function combinarFechaHoraExcel(fechaValor, horaValor) {
   let fecha = null;
 
@@ -720,7 +746,8 @@ function combinarFechaHoraExcel(fechaValor, horaValor) {
     segundos = totalSegundos % 60;
   }
 
-  return new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), horas, minutos, segundos);
+  // La fecha/hora del Excel es "hora de pared" de España (Madrid), no UTC directo.
+  return convertirMadridAUtc(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), horas, minutos, segundos);
 }
 
 app.post(

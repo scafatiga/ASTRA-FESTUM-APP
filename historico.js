@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!rawFecha) return 'Fecha no disponible';
         const dateObj = new Date(rawFecha);
         if (isNaN(dateObj.getTime())) return 'Fecha no disponible';
-        return dateObj.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+        return dateObj.toLocaleString('es-ES', { dateStyle: 'short' });
     }
 
     function calcularTotales(c) {
