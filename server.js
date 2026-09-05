@@ -969,6 +969,115 @@ app.get('/api/personal/:id/foto-dni', requirePermiso('empleados'), async (req, r
   }
 });
 
+// --- Importar Empleados desde Excel (formato AppSheet) ---
+// Evita duplicados por DNI. No migra accesos/permisos ni foto de DNI (por seguridad,
+// eso se activa a mano desde la ficha de cada empleado si hace falta).
+function parsearFechaSoloExcel(valor) {
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  if (typeof valor === 'string' && valor.trim()) {
+    const m = valor.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) {
+      let [, d, mo, y] = m;
+      if (y.length === 2) y = '20' + y;
+      const fecha = new Date(Number(y), Number(mo) - 1, Number(d));
+      if (!isNaN(fecha.getTime())) return fecha.toISOString().slice(0, 10);
+    }
+  }
+  if (typeof valor === 'number' && valor > 0) {
+    const fecha = new Date(Math.round((valor - 25569) * 86400 * 1000));
+    if (!isNaN(fecha.getTime())) return fecha.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+app.post('/api/personal/importar-excel', requirePermiso('empleados'), upload.single('archivo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo Excel' });
+  }
+
+  try {
+    const libro = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+    if (filas.length === 0) {
+      return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+    }
+
+    const { rows: puntosVentaDb } = await pool.query('SELECT id, nombre FROM puntos_venta');
+    function buscarPuntoVentaId(nombre) {
+      if (!nombre) return null;
+      const texto = String(nombre).trim().toLowerCase();
+      const encontrado = puntosVentaDb.find(pv => (pv.nombre || '').trim().toLowerCase() === texto);
+      return encontrado ? encontrado.id : null;
+    }
+
+    let creados = 0;
+    let actualizados = 0;
+    let omitidos = 0;
+    let sinPuntoVenta = 0;
+
+    for (const filaOriginal of filas) {
+      const fila = normalizarFilaExcel(filaOriginal);
+
+      const nombre = String(obtenerValorPorClave(fila, 'NOMBRE')).trim();
+      if (!nombre) {
+        omitidos++;
+        continue;
+      }
+
+      const dni = String(obtenerValorPorClave(fila, 'DNI')).trim() || null;
+      const numeroSegSocial = String(obtenerValorPorClave(fila, 'Nº SEG. SOCIAL')).trim() || null;
+      const nacionalidad = String(obtenerValorPorClave(fila, 'NACIONALIDAD')).trim() || null;
+      const fechaNacimiento = parsearFechaSoloExcel(obtenerValorPorClave(fila, 'FECHA DE NACIMIENTO'));
+      const iban = String(obtenerValorPorClave(fila, 'IBAN')).trim() || null;
+      const domicilio = String(obtenerValorPorClave(fila, 'DOMICILIO')).trim() || String(obtenerValorPorClave(fila, 'DIRECCION')).trim() || null;
+      const fechaIn = parsearFechaSoloExcel(obtenerValorPorClave(fila, 'FECHA IN'));
+      const fechaOut = parsearFechaSoloExcel(obtenerValorPorClave(fila, 'FECHA OUT'));
+      const horasAltaValor = obtenerValorPorClave(fila, 'HORAS ALTA');
+      const horasAlta = horasAltaValor === '' ? null : parsearImporteExcel(horasAltaValor);
+      const email = String(obtenerValorPorClave(fila, 'EMAIL')).trim().toLowerCase() || null;
+      const estado = interpretarActivo(obtenerValorPorClave(fila, 'ESTADO'));
+
+      const nombrePuntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
+      const puntoVentaId = buscarPuntoVentaId(nombrePuntoVenta);
+      if (nombrePuntoVenta && !puntoVentaId) sinPuntoVenta++;
+
+      const existente = dni
+        ? await pool.query('SELECT id FROM empleados WHERE LOWER(TRIM(dni)) = LOWER($1)', [dni])
+        : { rows: [] };
+
+      if (existente.rows[0]) {
+        await pool.query(
+          `UPDATE empleados SET
+             nombre=$1, numero_seguridad_social=$2, nacionalidad=$3, fecha_nacimiento=$4,
+             iban=$5, domicilio=$6, fecha_in=$7, fecha_out=$8, horas_alta=$9,
+             punto_venta_id=$10, email=$11, estado=$12
+           WHERE id=$13`,
+          [nombre, numeroSegSocial, nacionalidad, fechaNacimiento, iban, domicilio, fechaIn, fechaOut,
+           horasAlta, puntoVentaId, email, estado, existente.rows[0].id]
+        );
+        actualizados++;
+      } else {
+        await pool.query(
+          `INSERT INTO empleados
+            (nombre, dni, numero_seguridad_social, nacionalidad, fecha_nacimiento, iban, domicilio,
+             fecha_in, fecha_out, horas_alta, punto_venta_id, email, estado, registrado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [nombre, dni, numeroSegSocial, nacionalidad, fechaNacimiento, iban, domicilio,
+           fechaIn, fechaOut, horasAlta, puntoVentaId, email, estado, req.session.usuario.id]
+        );
+        creados++;
+      }
+    }
+
+    res.json({ ok: true, total: filas.length, creados, actualizados, omitidos, sinPuntoVenta });
+  } catch (err) {
+    console.error('Error POST /api/personal/importar-excel:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que es un .xlsx válido.' });
+  }
+});
+
 app.post('/api/personal', requirePermiso('empleados'), upload.single('fotoDni'), async (req, res) => {
   const {
     nombre,
