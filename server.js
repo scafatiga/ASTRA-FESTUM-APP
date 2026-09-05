@@ -2290,7 +2290,9 @@ function puedeFicharPorOtros(req) {
 app.get('/api/fichajes/mi-panel', requirePermiso('inout'), async (req, res) => {
   try {
     const miEmpleadoId = await obtenerEmpleadoDeUsuario(req.session.usuario.id);
-    if (!miEmpleadoId) {
+    const puedeTerceros = puedeFicharPorOtros(req);
+
+    if (!miEmpleadoId && !puedeTerceros) {
       return res.status(400).json({ error: 'Tu usuario no tiene una ficha de Empleado asociada. Pide a un administrador que la vincule.' });
     }
 
@@ -2302,17 +2304,20 @@ app.get('/api/fichajes/mi-panel', requirePermiso('inout'), async (req, res) => {
       return rows[0] ? 'SALIDA' : 'ENTRADA';
     }
 
-    const { rows: miFichaRows } = await pool.query('SELECT id, nombre, punto_venta_id FROM empleados WHERE id = $1', [miEmpleadoId]);
-    const miFicha = miFichaRows[0];
+    let yo = null;
+    if (miEmpleadoId) {
+      const { rows: miFichaRows } = await pool.query('SELECT id, nombre, punto_venta_id FROM empleados WHERE id = $1', [miEmpleadoId]);
+      const miFicha = miFichaRows[0];
+      if (miFicha) {
+        yo = {
+          empleado_id: miFicha.id,
+          nombre: miFicha.nombre,
+          punto_venta_id: miFicha.punto_venta_id,
+          proxima_accion: await estadoDe(miFicha.id)
+        };
+      }
+    }
 
-    const yo = {
-      empleado_id: miFicha.id,
-      nombre: miFicha.nombre,
-      punto_venta_id: miFicha.punto_venta_id,
-      proxima_accion: await estadoDe(miFicha.id)
-    };
-
-    const puedeTerceros = puedeFicharPorOtros(req);
     let empleados = [];
     if (puedeTerceros) {
       const { rows } = await pool.query('SELECT id, nombre, punto_venta_id FROM empleados WHERE estado = TRUE ORDER BY nombre ASC');

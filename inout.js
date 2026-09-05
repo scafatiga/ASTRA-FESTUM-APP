@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const btnFichar = document.getElementById('btnFichar');
     const selectPuntoVenta = document.getElementById('puntoVenta');
-    const inputFechaHora = document.getElementById('fechaHora');
+    const inputFecha = document.getElementById('fecha');
+    const inputHora = document.getElementById('hora');
     const bloqueFicharPor = document.getElementById('bloqueFicharPor');
     const selectFicharPor = document.getElementById('ficharPor');
     const tabla = document.getElementById('tablaFichajes');
@@ -9,12 +10,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     let puntosVentaCache = [];
     let empleadosCache = []; // solo si puede fichar por terceros
     let miPanel = null; // { yo, puede_terceros, empleados }
-    let empleadoSeleccionadoId = null; // null = yo mismo
+    let empleadoSeleccionadoId = null; // null = yo mismo (si tengo ficha propia)
 
-    function ahoraParaInput() {
+    function ahoraParaInputs() {
         const d = new Date();
         const pad = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        inputFecha.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        inputHora.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
     function formatearFecha(f) {
@@ -65,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!empleado) {
             btnFichar.disabled = true;
             btnFichar.className = 'w-full h-20 rounded-lg text-xl font-bold text-white transition bg-gray-300';
-            btnFichar.textContent = 'Selecciona un empleado';
+            btnFichar.textContent = miPanel.yo ? 'Selecciona un empleado' : 'Elige por quién vas a fichar';
             return;
         }
 
@@ -82,15 +84,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!res.ok) throw new Error(datos.error || 'Error al cargar tu panel de fichaje');
             miPanel = datos;
 
-            selectPuntoVenta.value = miPanel.yo.punto_venta_id || '';
+            if (miPanel.yo) {
+                selectPuntoVenta.value = miPanel.yo.punto_venta_id || '';
+            }
 
             if (miPanel.puede_terceros && miPanel.empleados.length > 0) {
                 empleadosCache = miPanel.empleados;
                 const opciones = empleadosCache
-                    .filter(e => e.id !== miPanel.yo.empleado_id)
+                    .filter(e => !miPanel.yo || e.id !== miPanel.yo.empleado_id)
                     .map(e => `<option value="${e.id}">${e.nombre}</option>`)
                     .join('');
-                selectFicharPor.innerHTML = `<option value="">Yo mismo</option>${opciones}`;
+
+                if (miPanel.yo) {
+                    selectFicharPor.innerHTML = `<option value="">Yo mismo</option>${opciones}`;
+                } else {
+                    // No tienes ficha de Empleado propia: hay que elegir a alguien sí o sí
+                    selectFicharPor.innerHTML = `<option value="">-- Selecciona --</option>${opciones}`;
+                }
                 bloqueFicharPor.classList.remove('hidden');
             }
 
@@ -112,14 +122,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     btnFichar.addEventListener('click', async () => {
-        const empleadoId = empleadoSeleccionadoId || miPanel.yo.empleado_id;
+        const empleadoId = empleadoSeleccionadoId || (miPanel.yo ? miPanel.yo.empleado_id : null);
         const puntoVentaId = selectPuntoVenta.value;
-        const fechaHora = inputFechaHora.value;
 
+        if (!empleadoId) {
+            alert('Elige por quién vas a fichar.');
+            return;
+        }
         if (!puntoVentaId) {
             alert('Selecciona un Punto de Venta.');
             return;
         }
+
+        const fechaValor = inputFecha.value;
+        const horaValor = inputHora.value;
+        const fechaHoraCombinada = (fechaValor && horaValor) ? `${fechaValor}T${horaValor}` : '';
 
         btnFichar.disabled = true;
         try {
@@ -129,13 +146,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                     empleado_id: empleadoId,
                     punto_venta_id: puntoVentaId,
-                    hora: fechaHora ? new Date(fechaHora).toISOString() : undefined
+                    hora: fechaHoraCombinada ? new Date(fechaHoraCombinada).toISOString() : undefined
                 })
             });
             const resultado = await res.json();
             if (!res.ok) throw new Error(resultado.error || 'Error al registrar el fichaje');
 
-            inputFechaHora.value = ahoraParaInput();
+            ahoraParaInputs();
             await cargarMiPanel();
             cargarFichajes();
         } catch (err) {
@@ -323,7 +340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    inputFechaHora.value = ahoraParaInput();
+    ahoraParaInputs();
     await cargarPuntosVenta();
     await cargarMiPanel();
     await cargarFichajes();
