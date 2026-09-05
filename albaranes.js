@@ -487,6 +487,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Importar histórico desde Excel + ZIP ---
+    const inputExcelAlbaranes = document.getElementById('inputExcelAlbaranes');
+    const inputZipAlbaranes = document.getElementById('inputZipAlbaranes');
+    const btnImportarAlbaranes = document.getElementById('btnImportarAlbaranes');
+    const resultadoImportacionAlbaranes = document.getElementById('resultadoImportacionAlbaranes');
+
+    btnImportarAlbaranes.addEventListener('click', async () => {
+        const archivoExcel = inputExcelAlbaranes.files[0];
+        if (!archivoExcel) {
+            alert('Selecciona primero el archivo Excel.');
+            return;
+        }
+
+        btnImportarAlbaranes.disabled = true;
+        btnImportarAlbaranes.textContent = 'Importando...';
+        resultadoImportacionAlbaranes.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('excel', archivoExcel);
+        const archivoZip = inputZipAlbaranes.files[0];
+        if (archivoZip) formData.append('zip', archivoZip);
+
+        try {
+            const res = await fetch('/api/albaranes/importar-excel-zip', { method: 'POST', body: formData });
+            const resultado = await res.json();
+            if (!res.ok) throw new Error(resultado.error || 'Error al importar');
+
+            let texto = `Importación completada: ${resultado.creados} albarán(es) creado(s) de ${resultado.total} filas leídas. `;
+            texto += `${resultado.conPdf} con PDF, ${resultado.sinPdf} sin PDF.`;
+            if (resultado.omitidos > 0) texto += ` ${resultado.omitidos} fila(s) omitida(s) (datos incompletos).`;
+            if (resultado.mismoOrigenDestino > 0) texto += ` ${resultado.mismoOrigenDestino} fila(s) omitida(s) (origen y destino iguales).`;
+            if (resultado.sinPuntoVenta > 0) texto += ` ${resultado.sinPuntoVenta} fila(s) con algún Punto de Venta que no se encontró.`;
+            if (resultado.sinNave > 0) texto += ` ${resultado.sinNave} fila(s) sin poder encontrar "La Nave" (créala en Puntos de Venta si aún no existe).`;
+
+            resultadoImportacionAlbaranes.textContent = texto;
+            resultadoImportacionAlbaranes.className = 'text-sm mb-6 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3';
+            resultadoImportacionAlbaranes.classList.remove('hidden');
+
+            cargarAlbaranes();
+        } catch (err) {
+            console.error(err);
+            resultadoImportacionAlbaranes.textContent = err.message || 'No se pudo importar.';
+            resultadoImportacionAlbaranes.className = 'text-sm mb-6 text-red-700 bg-red-50 border border-red-200 rounded p-3';
+            resultadoImportacionAlbaranes.classList.remove('hidden');
+        } finally {
+            btnImportarAlbaranes.disabled = false;
+            btnImportarAlbaranes.textContent = '📄 Importar';
+            inputExcelAlbaranes.value = '';
+            inputZipAlbaranes.value = '';
+        }
+    });
+
     await cargarPuntosVentaSelect();
     await cargarAlbaranes();
 });

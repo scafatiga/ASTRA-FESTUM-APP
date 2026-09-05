@@ -3211,6 +3211,168 @@ app.get('/api/albaranes/:id', requirePermiso('albaranes'), async (req, res) => {
   }
 });
 
+// --- Importar Albaranes históricos desde Excel + ZIP de PDFs (formato AppSheet) ---
+// Solo importa la cabecera del Albarán y el PDF real que ya existía en Drive
+// (no reconstruye el detalle de productos: se mantiene el histórico visual tal cual).
+app.post(
+  '/api/albaranes/importar-excel-zip',
+  requirePermiso('albaranes'),
+  upload.fields([{ name: 'excel', maxCount: 1 }, { name: 'zip', maxCount: 1 }]),
+  async (req, res) => {
+    if (!req.files || !req.files.excel || !req.files.excel[0]) {
+      return res.status(400).json({ error: 'Falta el archivo Excel' });
+    }
+
+    try {
+      const libro = XLSX.read(req.files.excel[0].buffer, { type: 'buffer', cellDates: true });
+      const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+      if (filas.length === 0) {
+        return res.status(400).json({ error: 'El Excel no tiene filas de datos.' });
+      }
+
+      let entradasZip = [];
+      if (req.files.zip && req.files.zip[0]) {
+        const zip = new AdmZip(req.files.zip[0].buffer);
+        entradasZip = zip.getEntries()
+          .filter(e => !e.isDirectory)
+          .map(e => ({ rutaNormalizada: normalizarRutaArchivo(e.entryName), entrada: e }));
+      }
+
+      function buscarArchivoZip(rutaExcel) {
+        if (!rutaExcel || entradasZip.length === 0) return null;
+        const rutaNorm = normalizarRutaArchivo(rutaExcel);
+        let encontrado = entradasZip.find(e => e.rutaNormalizada.endsWith(rutaNorm));
+        if (!encontrado) encontrado = entradasZip.find(e => rutaNorm.endsWith(e.rutaNormalizada));
+        if (!encontrado) {
+          const nombreArchivo = rutaNorm.split('/').pop();
+          encontrado = entradasZip.find(e => e.rutaNormalizada.split('/').pop() === nombreArchivo);
+        }
+        return encontrado ? encontrado.entrada : null;
+      }
+
+      const { rows: puntosVentaDb } = await pool.query('SELECT id, nombre FROM puntos_venta');
+      function buscarPuntoVentaId(nombre) {
+        if (!nombre) return null;
+        const texto = String(nombre).trim().toLowerCase();
+        const encontrado = puntosVentaDb.find(pv => (pv.nombre || '').trim().toLowerCase() === texto);
+        return encontrado ? encontrado.id : null;
+      }
+
+      const { rows: usuariosDb } = await pool.query('SELECT id, nombre, email FROM usuarios');
+      function buscarUsuarioId(nombreOEmail) {
+        if (!nombreOEmail) return null;
+        const texto = String(nombreOEmail).trim().toLowerCase();
+        const encontrado = usuariosDb.find(u =>
+          (u.nombre || '').trim().toLowerCase() === texto ||
+          (u.email || '').trim().toLowerCase() === texto
+        );
+        return encontrado ? encontrado.id : null;
+      }
+
+      const idNave = await obtenerIdPuntoVentaNave();
+
+      let creados = 0;
+      let omitidos = 0;
+      let mismoOrigenDestino = 0;
+      let sinPuntoVenta = 0;
+      let sinNave = 0;
+      let conPdf = 0;
+      let sinPdf = 0;
+
+      for (const filaOriginal of filas) {
+        const fila = normalizarFilaExcel(filaOriginal);
+
+        const fechaValor = obtenerValorPorClave(fila, 'FECHA');
+        const totalValor = obtenerValorPorClave(fila, 'TOTAL ALBARAN');
+        const tipoStand = String(obtenerValorPorClave(fila, 'TIPO STAND')).trim().toUpperCase();
+        const tipoAlbaran = String(obtenerValorPorClave(fila, 'TIPO_ALBARAN')).trim().toUpperCase();
+        const nombrePuntoVenta = obtenerValorPorClave(fila, 'PUNTO DE VENTA');
+        const nombrePuntoVentaOrigen = obtenerValorPorClave(fila, 'PUNTO DE VENTA ORIGEN');
+        const usuario = obtenerValorPorClave(fila, 'USUARIO');
+        let rutaArchivo = obtenerValorPorClave(fila, 'ENLACE AL PDF');
+        if (!rutaArchivo) rutaArchivo = obtenerValorRutaArchivo(fila);
+
+        const fecha = parsearFechaSoloExcel(fechaValor);
+        if (!fecha || !tipoStand || !tipoAlbaran) {
+          omitidos++;
+          continue;
+        }
+
+        const puntoVentaId = buscarPuntoVentaId(nombrePuntoVenta);
+        if (nombrePuntoVenta && !puntoVentaId) sinPuntoVenta++;
+
+        let origenId = null;
+        let destinoId = null;
+
+        if (tipoAlbaran === 'TRASPASO') {
+          origenId = buscarPuntoVentaId(nombrePuntoVentaOrigen);
+          destinoId = puntoVentaId;
+          if (nombrePuntoVentaOrigen && !origenId) sinPuntoVenta++;
+        } else if (tipoAlbaran === 'FINAL') {
+          origenId = puntoVentaId;
+          destinoId = idNave;
+          if (!idNave) sinNave++;
+        } else {
+          // INICIAL o NORMAL
+          origenId = idNave;
+          destinoId = puntoVentaId;
+          if (!idNave) sinNave++;
+        }
+
+        if (origenId && destinoId && origenId === destinoId) {
+          mismoOrigenDestino++;
+          continue;
+        }
+
+        const totalAlbaran = parsearImporteEuropeo(totalValor);
+        const usuarioId = buscarUsuarioId(usuario);
+
+        const archivoEncontrado = buscarArchivoZip(rutaArchivo);
+        let pdfR2Key = null;
+        if (archivoEncontrado) {
+          try {
+            const nombreArchivo = archivoEncontrado.entryName.split('/').pop();
+            const buffer = archivoEncontrado.getData();
+            pdfR2Key = await subirArchivoR2('albaranes/pdf', nombreArchivo, buffer, 'application/pdf');
+            conPdf++;
+          } catch (errR2) {
+            console.error('Error subiendo PDF de Albarán a R2:', errR2.message);
+            sinPdf++;
+          }
+        } else {
+          sinPdf++;
+        }
+
+        await pool.query(
+          `INSERT INTO albaranes
+            (fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, total_albaran, registrado_por, pdf_r2_key)
+           VALUES
+            ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [fecha, origenId, destinoId, tipoStand, tipoAlbaran, totalAlbaran, usuarioId, pdfR2Key]
+        );
+        creados++;
+      }
+
+      res.json({
+        ok: true,
+        total: filas.length,
+        creados,
+        omitidos,
+        mismoOrigenDestino,
+        sinPuntoVenta,
+        sinNave,
+        conPdf,
+        sinPdf
+      });
+    } catch (err) {
+      console.error('Error POST /api/albaranes/importar-excel-zip:', err.message);
+      res.status(500).json({ error: 'No se pudo leer el archivo. Asegúrate de que el Excel y el ZIP son válidos.' });
+    }
+  }
+);
+
 app.post('/api/albaranes', requirePermiso('albaranes'), async (req, res) => {
   const { fecha, punto_venta_origen_id, punto_venta_destino_id, tipo_stand, tipo_albaran, lineas } = req.body;
 
@@ -3423,6 +3585,19 @@ app.get('/api/albaranes/:id/pdf', requirePermiso('albaranes'), async (req, res) 
     );
     if (!cab.rows[0]) return res.status(404).json({ error: 'Albarán no encontrado' });
     const a = cab.rows[0];
+
+    // Si es un Albarán migrado del histórico con su PDF real guardado, se sirve tal cual
+    if (a.pdf_r2_key) {
+      const nombreArchivo = `albaran-${id.slice(0, 8)}.pdf`;
+      const datosPdf = await leerArchivoR2(a.pdf_r2_key);
+      res.set('Content-Type', 'application/pdf');
+      if (req.query.download) {
+        res.set('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+      } else {
+        res.set('Content-Disposition', `inline; filename="${nombreArchivo}"`);
+      }
+      return res.send(datosPdf);
+    }
 
     const detalle = await pool.query(
       'SELECT * FROM albaran_detalle WHERE albaran_id = $1 ORDER BY producto_nombre ASC',

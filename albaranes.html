@@ -14,6 +14,27 @@
             <h1 class="text-2xl font-bold text-gray-800">Albaranes</h1>
         </div>
 
+        <!-- Importar histórico desde Excel + ZIP de PDFs -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div class="text-sm text-gray-700 mb-3">
+                <span class="font-semibold">Importar Histórico</span> — Excel con columnas USUARIO, FECHA, PUNTO DE VENTA, TIPO STAND, TIPO_ALBARAN, TOTAL ALBARAN, PUNTO DE VENTA ORIGEN y ENLACE AL PDF (formato AppSheet). No se reconstruye el detalle de productos: se guarda el PDF real que ya existía en Drive. El ZIP de PDFs es opcional pero recomendado.
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Excel:</label>
+                    <input type="file" id="inputExcelAlbaranes" accept=".xlsx,.xls" class="w-full border p-2 rounded text-sm bg-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">ZIP de PDFs (opcional):</label>
+                    <input type="file" id="inputZipAlbaranes" accept=".zip" class="w-full border p-2 rounded text-sm bg-white">
+                </div>
+            </div>
+            <button type="button" id="btnImportarAlbaranes" class="w-full sm:w-auto mt-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition">
+                📄 Importar
+            </button>
+        </div>
+        <p id="resultadoImportacionAlbaranes" class="text-sm mb-6 hidden"></p>
+
         <!-- Formulario de alta -->
         <form id="formAlbaran" class="space-y-4 mb-8 border-b pb-6" novalidate>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
